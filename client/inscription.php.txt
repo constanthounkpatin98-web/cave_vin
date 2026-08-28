@@ -1,0 +1,816 @@
+<?php
+
+session_start();
+
+require_once("../connexion.php");
+
+//===============================================
+// Traitement de l'inscription
+//===============================================
+
+if(isset($_POST["nom"]))
+{
+    $nom             = trim($_POST["nom"]);
+    $prenom          = trim($_POST["prenom"]);
+    $telephone       = trim($_POST["telephone"]);
+    $email           = trim($_POST["email"]);
+    $adresse         = trim($_POST["adresse"]);
+    $mot_de_passe    = $_POST["mot_de_passe"];
+    $confirmation    = $_POST["confirmation"];
+
+    if(
+        empty($nom) ||
+        empty($prenom) ||
+        empty($email) ||
+        empty($mot_de_passe) ||
+        empty($confirmation)
+    )
+    {
+        header("Location: inscription.php?erreur=champs");
+        exit();
+    }
+
+    if($mot_de_passe !== $confirmation)
+    {
+        header("Location: inscription.php?erreur=mdp");
+        exit();
+    }
+
+    // Vérifier si l'email existe déjà
+    $verif = $connexion->prepare("SELECT id_client FROM client WHERE email = ?");
+    $verif->execute([$email]);
+
+    if($verif->fetch())
+    {
+        header("Location: inscription.php?erreur=email");
+        exit();
+    }
+
+    $mot_de_passe_hache = password_hash($mot_de_passe, PASSWORD_DEFAULT);
+
+    $requete = $connexion->prepare("
+
+    INSERT INTO client (nom, prenom, telephone, email, adresse, mot_de_passe, statut)
+
+    VALUES (?,?,?,?,?,?,'Actif')
+
+    ");
+
+    $requete->execute([$nom, $prenom, $telephone, $email, $adresse, $mot_de_passe_hache]);
+
+    $_SESSION["client_id"]  = $connexion->lastInsertId();
+    $_SESSION["client_nom"] = $nom . " " . $prenom;
+
+    // Redirection après création du compte
+    $redirect = isset($_POST['redirect']) && $_POST['redirect'] === 'commande' ? 'valider_panier.php' : 'accueil_client.php';
+    header("Location: " . $redirect);
+    exit();
+}
+
+?>
+<!DOCTYPE html>
+
+<html lang="fr">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Créer un compte</title>
+
+<link rel="stylesheet" href="../bootstrap-5.3.8-dist/css/bootstrap.min.css">
+
+<link rel="stylesheet" href="../bootstrap-icons-1.11.3/font/bootstrap-icons.css">
+
+<style>
+
+    /* =====================================================
+       VARIABLES (polices systeme, tout en local)
+    ===================================================== */
+
+    :root {
+
+        --noir:      #1c1a19;
+        --anthracite:#2b2725;
+        --bordeaux:  #6d1626;
+        --bordeaux-fonce: #4e0f1c;
+        --or:        #c9a24b;
+        --creme:     #f6f1ea;
+
+    }
+
+
+    body {
+
+        background: var(--creme);
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        color: #2c2622;
+
+    }
+
+
+    h1, h2, h3, h4, h5, h6 {
+
+        font-family: Georgia, 'Times New Roman', serif;
+
+    }
+
+
+    a {
+
+        text-decoration: none;
+
+    }
+
+
+    /* =====================================================
+       BARRE SUPERIEURE
+    ===================================================== */
+
+    .barre-haut {
+
+        background: var(--noir);
+        color: #cfc8c2;
+        font-size: 0.78rem;
+        padding: 6px 0;
+        letter-spacing: .04em;
+
+    }
+
+
+    /* =====================================================
+       ENTETE
+    ===================================================== */
+
+    .entete {
+
+        background: var(--anthracite);
+        color: #fff;
+        padding: 18px 0;
+        border-bottom: 3px solid var(--bordeaux);
+
+    }
+
+
+    .entete a {
+
+        color: #ece7e1;
+        text-decoration: none;
+        transition: color .15s ease;
+
+    }
+
+
+    .entete a:hover {
+
+        color: var(--or);
+
+    }
+
+
+    .logo-cave {
+
+        font-family: Georgia, 'Times New Roman', serif;
+        font-weight: 700;
+        font-size: 1.5rem;
+        letter-spacing: .03em;
+        color: #fff !important;
+
+    }
+
+
+    .logo-cave span {
+
+        color: var(--or);
+
+    }
+
+
+    /* =====================================================
+       SECTION INSCRIPTION
+    ===================================================== */
+
+    .section-auth {
+
+        background:
+            radial-gradient(ellipse at 58% 62%, rgba(150,150,150,.55), transparent 60%),
+            linear-gradient(135deg, #262626 0%, #4a4a4a 42%, #6e6e6e 65%, #333333 100%);
+
+        padding: 60px 0;
+
+        position: relative;
+
+        overflow: hidden;
+
+    }
+
+
+    .section-auth::after {
+
+        content: "🍷";
+        position: absolute;
+        right: -3%;
+        bottom: -10%;
+        font-size: 14rem;
+        opacity: .08;
+        transform: rotate(10deg);
+        color: #fff;
+
+    }
+
+
+    .carte-auth {
+
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 25px 60px rgba(0,0,0,.35);
+        overflow: hidden;
+        position: relative;
+        z-index: 2;
+
+    }
+
+
+    .entete-auth {
+
+        background: var(--noir);
+        color: #fff;
+        padding: 26px 30px;
+        text-align: center;
+        border-bottom: 3px solid var(--bordeaux);
+
+    }
+
+
+    .entete-auth .icone {
+
+        font-size: 1.9rem;
+        margin-bottom: 6px;
+
+    }
+
+
+    .entete-auth h3 {
+
+        margin: 0;
+        font-weight: 700;
+
+    }
+
+
+    .entete-auth p {
+
+        color: #cfc8c2;
+        font-size: .85rem;
+        margin: 4px 0 0;
+
+    }
+
+
+    .form-label {
+
+        font-weight: 600;
+        font-size: .88rem;
+        color: #4a423c;
+
+    }
+
+
+    .form-control {
+
+        border: 1px solid #e6ddd1;
+        border-radius: 8px;
+        padding: 10px 14px;
+
+    }
+
+
+    .form-control:focus {
+
+        border-color: var(--bordeaux);
+        box-shadow: 0 0 0 3px rgba(109,22,38,.1);
+
+    }
+
+
+    .btn-bordeaux {
+
+        background: var(--bordeaux);
+        border-color: var(--bordeaux);
+        color: #fff;
+        font-weight: 600;
+        padding: 10px 22px;
+
+    }
+
+
+    .btn-bordeaux:hover {
+
+        background: var(--bordeaux-fonce);
+        border-color: var(--bordeaux-fonce);
+        color: #fff;
+
+    }
+
+
+    .lien-bordeaux {
+
+        color: var(--bordeaux);
+        font-weight: 600;
+        font-size: .9rem;
+
+    }
+
+
+    .lien-bordeaux:hover {
+
+        color: var(--bordeaux-fonce);
+        text-decoration: underline;
+
+    }
+
+
+    /* =====================================================
+       PIED DE PAGE
+    ===================================================== */
+
+    .pied-cave {
+
+        background: var(--noir);
+        color: #beb4ab;
+        padding: 44px 0 22px;
+        font-size: .9rem;
+
+    }
+
+
+    .pied-cave h6 {
+
+        color: #fff;
+        font-family: Georgia, 'Times New Roman', serif;
+        font-weight: 700;
+        letter-spacing: .03em;
+        margin-bottom: 16px;
+
+    }
+
+
+    .pied-cave a {
+
+        color: #beb4ab;
+
+    }
+
+
+    .pied-cave a:hover {
+
+        color: var(--or);
+
+    }
+
+
+    .reseaux-sociaux a {
+
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        border: 1px solid #4a423c;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px;
+
+    }
+
+
+    .reseaux-sociaux a:hover {
+
+        background: var(--bordeaux);
+        border-color: var(--bordeaux);
+        color: #fff;
+
+    }
+
+
+    .copyright-cave {
+
+        border-top: 1px solid #3a332e;
+        margin-top: 30px;
+        padding-top: 18px;
+        font-size: .78rem;
+        color: #8a8078;
+
+    }
+
+
+    /* =====================================================
+       RESPONSIVE : évite tout débordement horizontal
+    ===================================================== */
+
+    .container {
+        width: 100%;
+        max-width: 1320px;
+    }
+
+    .barre-haut,
+    .entete,
+    .pied-cave,
+    .section-auth {
+        width: 100%;
+        max-width: 100%;
+        overflow: hidden;
+    }
+
+
+    @media (max-width: 767.98px) {
+
+        .container {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+
+        /* ---------- Barre supérieure ---------- */
+
+        .barre-haut {
+            padding: 5px 0;
+            font-size: .68rem;
+        }
+
+        .barre-haut .container {
+            justify-content: center !important;
+        }
+
+        .barre-haut .container span:nth-child(2) {
+            display: none;
+        }
+
+        /* ---------- En-tête ---------- */
+
+        .entete {
+            padding: 12px 0;
+        }
+
+        .entete .container {
+            gap: 10px !important;
+        }
+
+        .logo-cave {
+            font-size: 1.05rem;
+        }
+
+        .entete .d-flex.align-items-center.gap-4 {
+            gap: 10px !important;
+            font-size: .82rem;
+        }
+
+        /* ---------- Section inscription ---------- */
+
+        .section-auth {
+            padding: 34px 0;
+        }
+
+        .section-auth::after {
+            font-size: 9rem;
+        }
+
+        .entete-auth {
+            padding: 20px 18px;
+        }
+
+        .entete-auth h3 {
+            font-size: 1.25rem;
+        }
+
+        .carte-auth .p-4 {
+            padding: 18px !important;
+        }
+
+        .carte-auth .d-flex.justify-content-between.align-items-center.mt-3 {
+            flex-direction: column;
+            align-items: stretch !important;
+            gap: 12px;
+        }
+
+        .carte-auth .d-flex.justify-content-between.align-items-center.mt-3 .btn {
+            width: 100%;
+        }
+
+        .carte-auth .lien-bordeaux {
+            text-align: center;
+            font-size: .85rem;
+        }
+
+        /* ---------- Footer : une colonne ---------- */
+
+        .pied-cave {
+            padding: 40px 0 24px;
+        }
+
+        .pied-cave .row {
+            --bs-gutter-y: 1.8rem;
+        }
+
+        .pied-cave [class*="col-"] {
+            width: 100%;
+        }
+
+        .copyright-cave {
+            font-size: .72rem;
+            line-height: 1.6;
+        }
+    }
+
+
+    @media (max-width: 380px) {
+
+        .container {
+            padding-left: 9px;
+            padding-right: 9px;
+        }
+
+        .entete-auth h3 {
+            font-size: 1.1rem;
+        }
+
+        .entete .d-flex.align-items-center.gap-4 {
+            font-size: .76rem;
+        }
+    }
+
+</style>
+
+</head>
+
+<body>
+
+
+<!-- =====================================================
+     BARRE SUPERIEURE
+===================================================== -->
+
+<div class="barre-haut">
+
+    <div class="container d-flex justify-content-between align-items-center">
+
+        <span>
+            <i class="bi bi-truck"></i>
+            Livraison rapide partout au Bénin
+        </span>
+
+        <span>
+            <i class="bi bi-telephone"></i>
+            Assistance : utilisez notre chatbot 🍷
+        </span>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     ENTETE
+===================================================== -->
+
+<div class="entete">
+
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+
+        <a href="accueil_client.php" class="logo-cave">
+            🍷 CAVE <span>À VINS</span>
+        </a>
+
+
+        <div class="d-flex align-items-center gap-4 flex-wrap">
+
+            <a href="accueil_client.php">
+                <i class="bi bi-shop"></i>
+                Retour à la boutique
+            </a>
+
+            <a href="connexion_client.php">
+                <i class="bi bi-box-arrow-in-right"></i>
+                Se connecter
+            </a>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     SECTION INSCRIPTION
+===================================================== -->
+
+<div class="section-auth">
+
+<div class="container position-relative" style="z-index:2;">
+
+<div class="row justify-content-center">
+
+<div class="col-lg-6 col-md-8">
+
+<div class="carte-auth">
+
+<div class="entete-auth">
+
+<div class="icone">🍷</div>
+
+<h3>Créer un compte</h3>
+
+<p>Rejoignez la Cave à Vins</p>
+
+</div>
+
+<div class="p-4">
+
+<?php if(isset($_GET['erreur']) && $_GET['erreur'] == 'champs'): ?>
+
+<div class="alert alert-danger">
+<i class="bi bi-exclamation-triangle"></i>
+Veuillez remplir tous les champs obligatoires.
+</div>
+
+<?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'mdp'): ?>
+
+<div class="alert alert-danger">
+<i class="bi bi-exclamation-triangle"></i>
+Les mots de passe ne correspondent pas.
+</div>
+
+<?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'email'): ?>
+
+<div class="alert alert-danger">
+<i class="bi bi-exclamation-triangle"></i>
+Cet email est déjà utilisé.
+</div>
+
+<?php endif; ?>
+
+<form action="inscription.php" method="POST">
+
+<?php if(isset($_GET['redirect']) && $_GET['redirect'] === 'commande'): ?>
+<input type="hidden" name="redirect" value="commande">
+<?php endif; ?>
+
+<div class="row">
+
+<div class="col-md-6 mb-3">
+
+<label class="form-label">Nom</label>
+
+<input type="text" name="nom" class="form-control" required>
+
+</div>
+
+<div class="col-md-6 mb-3">
+
+<label class="form-label">Prénom</label>
+
+<input type="text" name="prenom" class="form-control" required>
+
+</div>
+
+</div>
+
+<div class="mb-3">
+
+<label class="form-label">Téléphone</label>
+
+<input type="text" name="telephone" class="form-control" placeholder="EX 01 97 00 00 00">
+
+</div>
+
+<div class="mb-3">
+
+<label class="form-label">Email</label>
+
+<input type="email" name="email" class="form-control" required>
+
+</div>
+
+<div class="mb-3">
+
+<label class="form-label">Adresse</label>
+
+<input type="text" name="adresse" class="form-control">
+
+</div>
+
+<div class="row">
+
+<div class="col-md-6 mb-3">
+
+<label class="form-label">Mot de passe</label>
+
+<input type="password" name="mot_de_passe" class="form-control" required>
+
+</div>
+
+<div class="col-md-6 mb-3">
+
+<label class="form-label">Confirmer le mot de passe</label>
+
+<input type="password" name="confirmation" class="form-control" required>
+
+</div>
+
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-3">
+
+<a href="connexion_client.php" class="lien-bordeaux">Déjà un compte ? Se connecter</a>
+
+<button type="submit" class="btn btn-bordeaux">S'inscrire</button>
+
+</div>
+
+</form>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+</div>
+
+
+<!-- =====================================================
+     PIED DE PAGE
+===================================================== -->
+
+<footer class="pied-cave">
+
+    <div class="container">
+
+        <div class="row g-4">
+
+            <div class="col-md-4">
+
+                <h6>🍷 Cave à Vins</h6>
+
+                <p class="small">
+                    Votre cave en ligne au Bénin : une sélection de vins
+                    rouges, blancs et champagnes livrés chez vous.
+                </p>
+
+                <div class="reseaux-sociaux mt-3">
+
+                    <a href="#"><i class="bi bi-facebook"></i></a>
+                    <a href="#"><i class="bi bi-instagram"></i></a>
+                    <a href="#"><i class="bi bi-whatsapp"></i></a>
+
+                </div>
+
+            </div>
+
+
+            <div class="col-md-4">
+
+                <h6>Compte</h6>
+
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="connexion_client.php">Connexion</a></li>
+                    <li class="mb-2"><a href="inscription.php">Créer un compte</a></li>
+                    <li class="mb-2"><a href="accueil_client.php">Boutique</a></li>
+                </ul>
+
+            </div>
+
+
+            <div class="col-md-4">
+
+                <h6>Aide</h6>
+
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="../avis/donner_avis.php">Donner un avis</a></li>
+                    <li class="mb-2"><a href="accueil_client.php">Nous contacter</a></li>
+                </ul>
+
+            </div>
+
+        </div>
+
+
+        <div class="copyright-cave text-center">
+            © <?php echo date("Y"); ?> Cave à Vins — Tous droits réservés.
+        </div>
+
+    </div>
+
+</footer>
+
+
+<script src="../bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+
+</body>
+
+</html>

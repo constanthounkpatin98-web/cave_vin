@@ -1,0 +1,3774 @@
+<?php
+
+session_start();
+
+require_once("../connexion.php");
+
+//===============================================
+// Sécurité : client connecté (SUPPRIMÉ pour rendre la page publique)
+//===============================================
+
+// if (!isset($_SESSION["client_id"])) {
+//     header("Location: connexion_client.php");
+//     exit();
+// }
+
+
+//===============================================
+// Filtres : catégorie + recherche
+//===============================================
+
+$id_categorie_filtre = isset($_GET["categorie"]) ? $_GET["categorie"] : "";
+$recherche = isset($_GET["recherche"]) ? trim($_GET["recherche"]) : "";
+
+$conditions = [
+    "vin.statut = 'Disponible'",
+    "vin.quantite_stock > 0"
+];
+
+$parametres = [];
+
+
+if (!empty($id_categorie_filtre)) {
+
+    $conditions[] = "vin.id_categorie = ?";
+    $parametres[] = $id_categorie_filtre;
+
+}
+
+
+if (!empty($recherche)) {
+
+    $conditions[] = "vin.nom_vin LIKE ?";
+    $parametres[] = "%" . $recherche . "%";
+
+}
+
+
+$sql_conditions = implode(" AND ", $conditions);
+
+
+//===============================================
+// Récupération des vins
+//===============================================
+
+$requete = $connexion->prepare("
+
+    SELECT
+        vin.*,
+        categorie.libelle AS libelle_categorie
+
+    FROM vin
+
+    LEFT JOIN categorie
+        ON vin.id_categorie = categorie.id_categorie
+
+    WHERE $sql_conditions
+
+    ORDER BY vin.nom_vin ASC
+
+");
+
+$requete->execute($parametres);
+
+
+//===============================================
+// Liste des catégories
+//===============================================
+
+$requete_categories = $connexion->query("
+
+    SELECT *
+    FROM categorie
+    WHERE statut = 'Actif'
+    ORDER BY libelle ASC
+
+");
+
+
+//===============================================
+// Nombre d'articles dans le panier
+//===============================================
+
+$nombre_panier = isset($_SESSION["panier"])
+    ? array_sum($_SESSION["panier"])
+    : 0;
+
+
+//===============================================
+// Nombre de notifications non lues (seulement si connecté)
+//===============================================
+
+$nombre_notifications = 0;
+$nombre_commandes_client = 0;
+
+if (isset($_SESSION["client_id"])) {
+    $requete_notif = $connexion->prepare("
+        SELECT COUNT(*) AS total
+        FROM notification
+        WHERE id_client = ? AND statut = 'Non lue'
+    ");
+    $requete_notif->execute([$_SESSION["client_id"]]);
+    $nombre_notifications = $requete_notif->fetch()["total"];
+
+    $requete_commandes = $connexion->prepare("
+        SELECT COUNT(*) AS total
+        FROM commande
+        WHERE id_client = ?
+    ");
+    $requete_commandes->execute([$_SESSION["client_id"]]);
+    $nombre_commandes_client = $requete_commandes->fetch()["total"];
+}
+
+?>
+<!DOCTYPE html>
+
+<html lang="fr">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1"
+    >
+
+    <title>Notre Cave à Vins</title>
+
+
+    <!-- Bootstrap 5.3.8 -->
+
+    <link
+        rel="stylesheet"
+        href="../bootstrap-5.3.8-dist/css/bootstrap.min.css"
+    >
+
+
+    <!-- Bootstrap Icons -->
+
+    <link
+        rel="stylesheet"
+        href="../bootstrap-icons-1.11.3/font/bootstrap-icons.css"
+    >
+
+
+    <style>
+
+        /* =====================================================
+           POLICES & VARIABLES
+        ===================================================== */
+
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=Poppins:wght@400;500;600;700&display=swap');
+
+        :root {
+
+            --noir:      #1c1a19;
+            --anthracite:#2b2725;
+            --bordeaux:  #6d1626;
+            --bordeaux-fonce: #4e0f1c;
+            --or:        #c9a24b;
+            --creme:     #f6f1ea;
+            --texte-clair:#f7f4ef;
+
+        }
+
+
+        /* =====================================================
+           STYLE GENERAL
+        ===================================================== */
+
+        body {
+
+            background: var(--creme);
+            font-family: 'Poppins', sans-serif;
+            color: #2c2622;
+
+        }
+
+
+        h1, h2, h3, h4, h5, h6,
+        .font-vitrine {
+
+            font-family: 'Playfair Display', serif;
+
+        }
+
+
+        a {
+
+            text-decoration: none;
+
+        }
+
+
+        /* =====================================================
+           BARRE SUPERIEURE
+        ===================================================== */
+
+        .barre-haut {
+
+            background: var(--noir);
+            color: #cfc8c2;
+            font-size: 0.78rem;
+            padding: 6px 0;
+            letter-spacing: .04em;
+
+        }
+
+
+        /* =====================================================
+           ENTETE
+        ===================================================== */
+
+        .entete {
+
+            background: var(--anthracite);
+
+            color: #fff;
+
+            padding: 18px 0;
+
+            border-bottom: 3px solid var(--bordeaux);
+
+        }
+
+
+        .entete a {
+
+            color: #ece7e1;
+
+            text-decoration: none;
+
+            transition: color .15s ease;
+
+        }
+
+
+        .entete a:hover {
+
+            color: var(--or);
+
+        }
+
+
+        .logo-cave {
+
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: 1.5rem;
+            letter-spacing: .03em;
+            color: #fff !important;
+
+        }
+
+
+        .logo-cave span {
+
+            color: var(--or);
+
+        }
+
+
+        .entete .nom-client {
+
+            color: #cfc8c2;
+            font-size: 0.9rem;
+
+        }
+
+
+        /* =====================================================
+           PANIER
+        ===================================================== */
+
+        .badge-panier {
+
+            background: var(--bordeaux);
+
+            color: #fff;
+
+            border-radius: 50%;
+
+            padding: 2px 7px;
+
+            font-size: 0.75rem;
+
+            position: relative;
+
+            top: -10px;
+
+            left: -8px;
+
+        }
+
+
+        /* =====================================================
+           HERO / BANNIERE
+        ===================================================== */
+
+        .hero-vin {
+
+            background:
+                radial-gradient(ellipse at 42% 62%, rgba(150,150,150,.55), transparent 60%),
+                linear-gradient(135deg, #262626 0%, #4a4a4a 42%, #6e6e6e 65%, #333333 100%);
+
+            color: #fff;
+
+            padding: 70px 0 60px;
+
+            min-height: 560px;
+
+            position: relative;
+
+            overflow: visible;
+
+        }
+
+
+        .hero-vin .conteneur-bouteille {
+
+            position: absolute;
+
+            left: 50%;
+
+            top: 50%;
+
+            transform: translate(-50%, -50%);
+
+            height: 92%;
+
+            width: auto;
+
+            max-width: 90%;
+
+            perspective: 1200px;
+
+            z-index: 1;
+
+            cursor: grab;
+
+            pointer-events: auto;
+
+        }
+
+
+        .hero-vin .conteneur-bouteille:active {
+
+            cursor: grabbing;
+
+        }
+
+
+        .hero-vin img.image-bouteille-hero {
+
+            height: 100%;
+
+            width: auto;
+
+            max-width: 100%;
+
+            display: block;
+
+            margin: 0 auto;
+
+            object-fit: contain;
+
+            filter: drop-shadow(0 25px 35px rgba(0,0,0,.45));
+
+            transform-style: preserve-3d;
+
+            backface-visibility: visible;
+
+            user-select: none;
+
+            -webkit-user-drag: none;
+
+            will-change: transform;
+
+        }
+
+
+        .hero-vin .astuce-rotation {
+
+            position: absolute;
+
+            bottom: -6px;
+
+            left: 50%;
+
+            transform: translateX(-50%);
+
+            font-size: .72rem;
+
+            color: #d8d0c8;
+
+            letter-spacing: .05em;
+
+            white-space: nowrap;
+
+            opacity: .8;
+
+            display: flex;
+
+            align-items: center;
+
+            gap: 6px;
+
+        }
+
+
+        .hero-vin .surtitre {
+
+            color: var(--or);
+            letter-spacing: .18em;
+            font-size: .78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+
+        }
+
+
+        .hero-vin h1 {
+
+            font-size: 2.6rem;
+            font-weight: 800;
+            line-height: 1.15;
+            max-width: 600px;
+
+        }
+
+
+        .hero-vin p.lead {
+
+            color: #d8d0c8;
+            max-width: 520px;
+            font-size: 1rem;
+
+        }
+
+
+        /* =====================================================
+           BLOC RECHERCHE (superpose au hero)
+        ===================================================== */
+
+        .bloc-recherche {
+
+            background: #fff;
+            border-radius: 16px;
+            padding: 22px;
+            box-shadow: 0 15px 40px rgba(0,0,0,.18);
+            margin-top: -55px;
+            position: relative;
+            z-index: 3;
+
+        }
+
+
+        /* =====================================================
+           CATEGORIES RAPIDES
+        ===================================================== */
+
+        .categorie-rapide {
+
+            background: #fff;
+            border-radius: 14px;
+            padding: 22px 16px;
+            text-align: center;
+            height: 100%;
+            border: 1px solid #efe8de;
+            transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+            display: block;
+            color: #2c2622;
+
+        }
+
+
+        .categorie-rapide:hover {
+
+            transform: translateY(-3px);
+            box-shadow: 0 10px 24px rgba(109,22,38,.12);
+            border-color: var(--bordeaux);
+            color: #2c2622;
+
+        }
+
+
+        .categorie-rapide .icone-cat {
+
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: var(--creme);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 10px;
+            font-size: 1.5rem;
+
+        }
+
+
+        .categorie-rapide .titre-cat {
+
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            font-size: .95rem;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+
+        }
+
+
+        .categorie-rapide.active {
+
+            border-color: var(--bordeaux);
+            box-shadow: 0 10px 24px rgba(109,22,38,.15);
+
+        }
+
+
+        /* =====================================================
+           SECTION TITRE
+        ===================================================== */
+
+        .titre-section {
+
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            margin: 46px 0 26px;
+
+        }
+
+
+        .titre-section h2 {
+
+            font-weight: 700;
+            font-size: 1.6rem;
+            margin: 0;
+            white-space: nowrap;
+
+        }
+
+
+        .titre-section .trait {
+
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(to right, #ddd2c2, transparent);
+
+        }
+
+
+        /* =====================================================
+           CARTES DES VINS
+        ===================================================== */
+
+        .carte-vin {
+
+            border: 1px solid #efe8de;
+
+            border-radius: 12px;
+
+            overflow: hidden;
+
+            box-shadow:
+                0 2px 10px rgba(28, 20, 20, 0.05);
+
+            transition:
+                transform .18s ease,
+                box-shadow .18s ease;
+
+            height: 100%;
+
+            background: #fff;
+
+        }
+
+
+        .carte-vin:hover {
+
+            transform: translateY(-5px);
+
+            box-shadow:
+                0 14px 28px rgba(28, 20, 20, 0.14);
+
+        }
+
+
+        .image-vin-wrap {
+
+            position: relative;
+            background: var(--creme);
+
+        }
+
+
+        .image-vin {
+
+            height: 200px;
+
+            object-fit: contain;
+
+            width: 100%;
+
+            padding: 10px;
+
+            background: #efe8de;
+
+        }
+
+
+        .ruban-cat {
+
+            display: inline-block;
+            background: var(--noir);
+            color: var(--or);
+            font-size: .68rem;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 20px;
+            margin: 10px 10px 0;
+            max-width: calc(100% - 20px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+
+        }
+
+
+        .badge-stock {
+
+            background: #e9f4ec;
+
+            color: #1f7a45;
+
+            font-weight: 600;
+
+            font-size: 0.72rem;
+
+            letter-spacing: .02em;
+
+        }
+
+
+        .nom-vin-carte {
+
+            font-family: 'Playfair Display', serif;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #211d1b;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+
+        }
+
+
+        .prix-vin {
+
+            font-size: 1.1rem;
+
+            font-weight: 700;
+
+            color: var(--bordeaux);
+
+            font-family: 'Playfair Display', serif;
+
+        }
+
+
+        /* =====================================================
+           BOUTONS
+        ===================================================== */
+
+        .btn-violet,
+        .btn-bordeaux {
+
+            background: var(--bordeaux);
+
+            border-color: var(--bordeaux);
+
+            color: #fff;
+
+            font-weight: 600;
+            letter-spacing: .02em;
+
+        }
+
+
+        .btn-violet:hover,
+        .btn-bordeaux:hover {
+
+            background: var(--bordeaux-fonce);
+
+            border-color: var(--bordeaux-fonce);
+
+            color: #fff;
+
+        }
+
+
+        .btn-outline-noir {
+
+            border: 1px solid #2c2622;
+            color: #2c2622;
+            background: transparent;
+            font-weight: 600;
+
+        }
+
+
+        .btn-outline-noir:hover {
+
+            background: #2c2622;
+            color: #fff;
+
+        }
+
+
+        /* =====================================================
+           BANDEAU LIVRAISON
+        ===================================================== */
+
+        .bandeau-livraison {
+
+            background: var(--bordeaux);
+            color: #fff;
+            padding: 34px 0;
+            margin-top: 56px;
+
+        }
+
+
+        .bandeau-livraison .pastille {
+
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: .95rem;
+            text-align: center;
+            flex-direction: column;
+            line-height: 1.05;
+
+        }
+
+
+        /* =====================================================
+           PIED DE PAGE
+        ===================================================== */
+
+        .pied-cave {
+
+            background: var(--noir);
+            color: #beb4ab;
+            padding: 44px 0 22px;
+            margin-top: 0;
+            font-size: .9rem;
+
+        }
+
+
+        .pied-cave h6 {
+
+            color: #fff;
+            font-family: 'Playfair Display', serif;
+            font-weight: 700;
+            letter-spacing: .03em;
+            margin-bottom: 16px;
+
+        }
+
+
+        .pied-cave a {
+
+            color: #beb4ab;
+
+        }
+
+
+        .pied-cave a:hover {
+
+            color: var(--or);
+
+        }
+
+
+        .reseaux-sociaux a {
+
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 1px solid #4a423c;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 8px;
+
+        }
+
+
+        .reseaux-sociaux a:hover {
+
+            background: var(--bordeaux);
+            border-color: var(--bordeaux);
+            color: #fff;
+
+        }
+
+
+        .pied-cave .newsletter input {
+
+            border-radius: 6px 0 0 6px;
+            border: none;
+            padding: 10px 12px;
+
+        }
+
+
+        .pied-cave .newsletter button {
+
+            border-radius: 0 6px 6px 0;
+            background: var(--or);
+            border: none;
+            color: var(--noir);
+            font-weight: 700;
+            padding: 0 16px;
+
+        }
+
+
+        .copyright-cave {
+
+            border-top: 1px solid #3a332e;
+            margin-top: 30px;
+            padding-top: 18px;
+            font-size: .78rem;
+            color: #8a8078;
+
+        }
+
+
+        /* =====================================================
+           CHATBOT : BOUTON FLOTTANT (RÉDUIT)
+        ===================================================== */
+
+        .chatbot-button {
+            position: fixed;
+            right: 20px;
+            bottom: 20px;
+            width: 50px;
+            height: 50px;
+            border: none;
+            border-radius: 50%;
+            background: var(--bordeaux);
+            color: white;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1050;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.25);
+            transition: .25s ease;
+        }
+
+        .chatbot-button:hover {
+            background: var(--bordeaux-fonce);
+            transform: scale(1.05);
+        }
+
+        .chatbot-notification {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--or);
+            color: var(--noir);
+            font-size: 9px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 2px solid white;
+        }
+
+        /* =====================================================
+           FENETRE CHATBOT (RÉDUITE)
+        ===================================================== */
+
+        .chatbot-window {
+            position: fixed;
+            right: 20px;
+            bottom: 75px;
+            width: 320px;
+            height: 420px;
+            z-index: 1049;
+            display: none;
+            overflow: hidden;
+            border-radius: 14px;
+            background: white;
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.2);
+        }
+
+        .chatbot-window.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* =====================================================
+           ENTETE CHATBOT (RÉDUIT)
+        ===================================================== */
+
+        .chatbot-header {
+            background: var(--noir);
+            color: white;
+            padding: 10px 14px;
+            border-bottom: 3px solid var(--bordeaux);
+        }
+
+        .chatbot-avatar {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            background: rgba(255,255,255,.12);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .chatbot-title {
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .chatbot-status {
+            font-size: 10px;
+        }
+
+        .chatbot-status span {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #2ed573;
+            margin-right: 4px;
+        }
+
+        /* =====================================================
+           ZONE MESSAGES (RÉDUITE)
+        ===================================================== */
+
+        .chatbot-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: var(--creme);
+        }
+
+        .chatbot-message {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+        }
+
+        .chatbot-mini-avatar {
+            width: 26px;
+            height: 26px;
+            min-width: 26px;
+            border-radius: 50%;
+            background: #f1e4d8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .chatbot-bubble {
+            max-width: 85%;
+            background: white;
+            border-radius: 12px;
+            border-top-left-radius: 3px;
+            padding: 8px 10px;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #333;
+            box-shadow: 0 1px 4px rgba(0,0,0,.05);
+        }
+
+        .chatbot-client {
+            justify-content: flex-end;
+        }
+
+        .chatbot-client .chatbot-bubble {
+            background: var(--bordeaux);
+            color: white;
+            border-radius: 12px;
+            border-top-right-radius: 3px;
+        }
+
+        /* =====================================================
+           SUGGESTIONS (RÉDUITES)
+        ===================================================== */
+
+        .chatbot-suggestions {
+            padding: 6px 8px;
+            display: flex;
+            gap: 4px;
+            overflow-x: auto;
+            border-top: 1px solid #eee;
+            background: white;
+        }
+
+        .chatbot-suggestions button {
+            white-space: nowrap;
+            border: 1px solid #e6d3d3;
+            background: #fbf5f1;
+            color: var(--bordeaux);
+            border-radius: 16px;
+            padding: 4px 8px;
+            font-size: 10px;
+            cursor: pointer;
+            transition: all .15s ease;
+        }
+
+        .chatbot-suggestions button:hover {
+            background: var(--bordeaux);
+            color: white;
+        }
+
+        /* =====================================================
+           SAISIE MESSAGE (RÉDUITE)
+        ===================================================== */
+
+        .chatbot-footer {
+            padding: 6px 10px;
+            display: flex;
+            gap: 6px;
+            background: white;
+            border-top: 1px solid #eee;
+        }
+
+        .chatbot-footer input {
+            flex: 1;
+            min-width: 0;
+            border: 1px solid #ddd;
+            border-radius: 20px;
+            padding: 6px 12px;
+            outline: none;
+            font-size: 12px;
+        }
+
+        .chatbot-footer input:focus {
+            border-color: var(--bordeaux);
+            box-shadow: 0 0 0 2px rgba(109,22,38,.08);
+        }
+
+        .chatbot-send {
+            width: 34px;
+            height: 34px;
+            border: none;
+            border-radius: 50%;
+            background: var(--bordeaux);
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background .2s ease;
+        }
+
+        .chatbot-send:hover {
+            background: var(--bordeaux-fonce);
+        }
+
+
+        /* =====================================================
+           RESPONSIVE - 4 PRODUITS PAR LIGNE
+        ===================================================== */
+
+        /* Desktop : 4 produits par ligne */
+        @media (min-width: 992px) {
+            .carte-vin .image-vin {
+                height: 200px;
+            }
+            
+            .carte-vin .card-body {
+                padding: 0.75rem;
+            }
+            
+            .carte-vin .btn-sm {
+                font-size: 0.7rem;
+                padding: 0.2rem 0.4rem;
+            }
+            
+            .carte-vin form .form-control-sm {
+                width: 60px !important;
+                font-size: 0.7rem;
+                padding: 0.15rem 0.3rem;
+            }
+            
+            .carte-vin .btn-bordeaux.btn-sm {
+                font-size: 0.65rem;
+                padding: 0.2rem 0.4rem;
+            }
+        }
+
+        /* Tablette : 3 produits par ligne */
+        @media (min-width: 768px) and (max-width: 991px) {
+            .carte-vin .image-vin {
+                height: 180px;
+            }
+            
+            .carte-vin .card-body {
+                padding: 0.65rem;
+            }
+            
+            .nom-vin-carte {
+                font-size: 0.85rem;
+            }
+            
+            .prix-vin {
+                font-size: 0.95rem;
+            }
+        }
+
+        /* Mobile : 2 produits par ligne */
+        @media (max-width: 767px) {
+            .carte-vin .image-vin {
+                height: 160px;
+            }
+            
+            .carte-vin .card-body {
+                padding: 0.5rem;
+            }
+            
+            .nom-vin-carte {
+                font-size: 0.8rem;
+            }
+            
+            .prix-vin {
+                font-size: 0.9rem;
+            }
+            
+            .carte-vin .btn-sm {
+                font-size: 0.65rem;
+                padding: 0.15rem 0.3rem;
+            }
+            
+            .carte-vin form .form-control-sm {
+                width: 50px !important;
+                font-size: 0.65rem;
+                padding: 0.1rem 0.2rem;
+            }
+            
+            .carte-vin .btn-bordeaux.btn-sm {
+                font-size: 0.6rem;
+                padding: 0.15rem 0.3rem;
+            }
+            
+            .carte-vin .badge-stock {
+                font-size: 0.6rem;
+            }
+            
+            .carte-vin .text-muted.small {
+                font-size: 0.65rem;
+            }
+        }
+
+        /* Très petit mobile */
+        @media (max-width: 400px) {
+            .carte-vin .image-vin {
+                height: 130px;
+            }
+            
+            .nom-vin-carte {
+                font-size: 0.7rem;
+            }
+            
+            .prix-vin {
+                font-size: 0.8rem;
+            }
+            
+            .carte-vin .card-body {
+                padding: 0.4rem;
+            }
+        }
+
+
+        /* =====================================================
+           MOBILE CHATBOT (RÉDUIT)
+        ===================================================== */
+
+        @media (max-width: 576px) {
+            .chatbot-button {
+                right: 15px;
+                bottom: 15px;
+                width: 44px;
+                height: 44px;
+                font-size: 17px;
+            }
+
+            .chatbot-window {
+                right: 10px;
+                left: 10px;
+                bottom: 65px;
+                width: auto !important;
+                height: 60vh !important;
+                max-height: 400px;
+                border-radius: 12px;
+            }
+
+            .chatbot-header {
+                padding: 8px 12px !important;
+            }
+
+            .chatbot-title {
+                font-size: 12px !important;
+            }
+
+            .chatbot-avatar {
+                width: 28px;
+                height: 28px;
+                font-size: 13px;
+            }
+
+            .chatbot-messages {
+                padding: 8px !important;
+            }
+
+            .chatbot-bubble {
+                font-size: 11px !important;
+                padding: 6px 8px !important;
+                max-width: 90% !important;
+            }
+
+            .chatbot-suggestions {
+                padding: 4px 6px !important;
+                gap: 3px !important;
+            }
+
+            .chatbot-suggestions button {
+                font-size: 9px !important;
+                padding: 3px 6px !important;
+            }
+
+            .chatbot-footer {
+                padding: 5px 8px !important;
+                gap: 4px !important;
+            }
+
+            .chatbot-footer input {
+                font-size: 11px !important;
+                padding: 5px 10px !important;
+            }
+
+            .chatbot-send {
+                width: 30px;
+                height: 30px;
+                font-size: 12px !important;
+            }
+
+            .chatbot-notification {
+                width: 16px;
+                height: 16px;
+                font-size: 8px;
+            }
+        }
+
+
+        /* =====================================================
+           MOBILE - AUTRES AJUSTEMENTS
+        ===================================================== */
+
+        @media (max-width: 768px) {
+
+            .hero-vin {
+
+                min-height: auto;
+
+                padding: 36px 0 70px;
+
+            }
+
+
+            .hero-vin .container.position-relative {
+
+                text-align: center;
+
+            }
+
+
+            .hero-vin p.lead {
+
+                margin-left: auto;
+
+                margin-right: auto;
+
+            }
+
+
+            .hero-vin .conteneur-bouteille {
+
+                position: static;
+
+                left: auto;
+
+                top: auto;
+
+                transform: none;
+
+                height: 260px;
+
+                max-width: 100%;
+
+                margin: 22px auto 0;
+
+            }
+
+
+            .hero-vin .astuce-rotation {
+
+                position: static;
+
+                transform: none;
+
+                justify-content: center;
+
+                margin-top: 10px;
+
+            }
+
+
+            .bloc-recherche {
+
+                margin-top: -20px;
+
+            }
+
+        }
+
+
+        @media (max-width: 576px) {
+
+            .hero-vin h1 {
+
+                font-size: 1.9rem;
+
+            }
+
+
+            .hero-vin .conteneur-bouteille {
+
+                height: 200px;
+                margin-bottom: 20px;
+
+            }
+
+        }
+
+    
+        /* =====================================================
+           RESPONSIVE PRO - CORRECTION MOBILE / TABLETTE
+           Ne modifie pas les couleurs ni les fonctionnalités.
+        ===================================================== */
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        html {
+            width: 100%;
+            max-width: 100%;
+            overflow-x: hidden;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            overflow-x: hidden;
+        }
+
+        img,
+        svg,
+        video {
+            max-width: 100%;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1320px;
+        }
+
+        .barre-haut,
+        .entete,
+        .hero-vin,
+        .bandeau-livraison,
+        .pied-cave {
+            width: 100%;
+            max-width: 100%;
+            overflow: hidden;
+        }
+
+        /* ---------- Barre supérieure ---------- */
+
+        .barre-haut .container {
+            min-width: 0;
+            gap: 10px;
+        }
+
+        .barre-haut span {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* ---------- En-tête ---------- */
+
+        .entete .container {
+            min-width: 0;
+        }
+
+        .entete .container > .d-flex:last-child {
+            min-width: 0;
+            flex: 0 1 auto;
+        }
+
+        .entete a,
+        .entete span {
+            min-width: 0;
+        }
+
+        /* ---------- Hero ---------- */
+
+        .hero-vin {
+            overflow: hidden;
+        }
+
+        .hero-vin .container {
+            min-width: 0;
+        }
+
+        .hero-vin h1,
+        .hero-vin p.lead {
+            overflow-wrap: anywhere;
+        }
+
+        .hero-vin .conteneur-bouteille {
+            max-width: 100%;
+        }
+
+        .hero-vin img.image-bouteille-hero {
+            max-width: 100%;
+            height: 100%;
+        }
+
+        /* ---------- Recherche ---------- */
+
+        .bloc-recherche {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+
+        .bloc-recherche .form-control,
+        .bloc-recherche .form-select,
+        .bloc-recherche .btn {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        /* ---------- Titres ---------- */
+
+        .titre-section {
+            min-width: 0;
+        }
+
+        .titre-section h2 {
+            min-width: 0;
+            overflow-wrap: anywhere;
+        }
+
+        /* ---------- Cartes produits ---------- */
+
+        .carte-vin {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .carte-vin .card-body {
+            min-width: 0;
+        }
+
+        .image-vin {
+            max-width: 100%;
+        }
+
+        .carte-vin form {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .carte-vin form .form-control-sm {
+            flex: 0 0 auto;
+            max-width: 30%;
+        }
+
+        .carte-vin form .btn {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* ---------- Bandeau livraison ---------- */
+
+        .bandeau-livraison .container {
+            min-width: 0;
+        }
+
+        .bandeau-livraison .container > div {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .bandeau-livraison .container > div > div:last-child {
+            min-width: 0;
+        }
+
+        .bandeau-livraison .small {
+            overflow-wrap: anywhere;
+        }
+
+        /* ---------- Footer ---------- */
+
+        .pied-cave .container,
+        .pied-cave .row,
+        .pied-cave [class*="col-"] {
+            min-width: 0;
+            max-width: 100%;
+        }
+
+        .pied-cave p,
+        .pied-cave li,
+        .pied-cave a {
+            overflow-wrap: anywhere;
+        }
+
+        .pied-cave .newsletter {
+            width: 100%;
+            max-width: 100%;
+        }
+
+        .pied-cave .newsletter input {
+            min-width: 0;
+            width: 100%;
+            flex: 1 1 auto;
+        }
+
+        .pied-cave .newsletter button {
+            flex: 0 0 auto;
+        }
+
+        /* ---------- Chatbot ---------- */
+
+        .chatbot-window {
+            max-width: calc(100vw - 20px);
+        }
+
+        .chatbot-messages {
+            min-width: 0;
+        }
+
+        /* =====================================================
+           MOBILE : jusqu'à 767px
+        ===================================================== */
+
+        @media (max-width: 767.98px) {
+
+            .container {
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+
+            /* Barre supérieure : une seule information visible */
+            .barre-haut {
+                padding: 5px 0;
+                font-size: .68rem;
+            }
+
+            .barre-haut .container {
+                justify-content: center !important;
+            }
+
+            .barre-haut .container span:nth-child(2) {
+                display: none;
+            }
+
+            /* Header compact */
+            .entete {
+                padding: 10px 0;
+            }
+
+            .entete .container {
+                flex-wrap: nowrap !important;
+                gap: 8px !important;
+            }
+
+            .logo-cave {
+                font-size: 1.05rem;
+                line-height: 1.1;
+                white-space: nowrap;
+                flex: 0 1 auto;
+            }
+
+            .entete .container > .d-flex:last-child {
+                gap: 10px !important;
+                flex-wrap: nowrap !important;
+                justify-content: flex-end;
+            }
+
+            .entete .container > .d-flex:last-child .nom-client {
+                display: none;
+            }
+
+            .entete .container > .d-flex:last-child > a {
+                font-size: 0;
+                line-height: 1;
+                white-space: nowrap;
+                flex: 0 0 auto;
+            }
+
+            .entete .container > .d-flex:last-child > a i {
+                font-size: 1.15rem;
+            }
+
+            .entete .container > .d-flex:last-child > a[href="../panier/panier.php"] i {
+                font-size: 1.3rem;
+            }
+
+            .entete .badge-panier {
+                font-size: .58rem;
+                padding: 1px 5px;
+                top: -8px;
+                left: -5px;
+            }
+
+            /* Hero */
+            .hero-vin {
+                padding: 32px 0 58px;
+            }
+
+            .hero-vin .container.position-relative {
+                text-align: center;
+            }
+
+            .hero-vin .surtitre {
+                font-size: .68rem;
+                letter-spacing: .12em;
+            }
+
+            .hero-vin h1 {
+                font-size: clamp(1.7rem, 7vw, 2.15rem);
+                line-height: 1.12;
+                margin-top: 8px !important;
+            }
+
+            .hero-vin p.lead {
+                font-size: .88rem;
+                line-height: 1.55;
+                margin-bottom: 0;
+            }
+
+            .hero-vin .conteneur-bouteille {
+                width: min(100%, 270px);
+                height: 205px;
+                margin: 18px auto 0;
+            }
+
+            .hero-vin .astuce-rotation {
+                font-size: .62rem;
+                white-space: normal;
+                text-align: center;
+                width: 100%;
+                margin-top: 8px;
+            }
+
+            /* Recherche : une colonne */
+            .bloc-recherche {
+                margin-top: -18px;
+                padding: 14px;
+                border-radius: 12px;
+            }
+
+            .bloc-recherche.row {
+                --bs-gutter-x: .5rem;
+                --bs-gutter-y: .5rem;
+            }
+
+            .bloc-recherche > [class*="col-"] {
+                width: 100%;
+                flex: 0 0 100%;
+            }
+
+            /* Catégories */
+            .row.g-3.mt-4 {
+                --bs-gutter-x: .55rem;
+                --bs-gutter-y: .55rem;
+            }
+
+            .categorie-rapide {
+                padding: 14px 8px;
+                border-radius: 12px;
+            }
+
+            .categorie-rapide .icone-cat {
+                width: 44px;
+                height: 44px;
+                font-size: 1.2rem;
+                margin-bottom: 7px;
+            }
+
+            .categorie-rapide .titre-cat {
+                font-size: .72rem;
+            }
+
+            .categorie-rapide .text-muted.small {
+                font-size: .62rem;
+            }
+
+            /* Titre section */
+            .titre-section {
+                gap: 8px;
+                margin: 32px 0 16px;
+            }
+
+            .titre-section h2 {
+                font-size: 1.18rem;
+                white-space: normal;
+            }
+
+            /* Produits : 2 par ligne */
+            .row.g-3 > .col-6 {
+                padding-left: 4px;
+                padding-right: 4px;
+            }
+
+            .carte-vin {
+                border-radius: 10px;
+            }
+
+            .carte-vin .image-vin {
+                height: 145px;
+                padding: 7px;
+            }
+
+            .ruban-cat {
+                font-size: .55rem;
+                padding: 3px 7px;
+                margin: 7px 7px 0;
+                max-width: calc(100% - 14px);
+            }
+
+            .carte-vin .card-body {
+                padding: .55rem;
+            }
+
+            .nom-vin-carte {
+                font-size: .76rem;
+                line-height: 1.25;
+            }
+
+            .carte-vin .text-muted.small {
+                font-size: .62rem;
+            }
+
+            .carte-vin .badge-stock {
+                font-size: .58rem;
+                padding: 3px 5px;
+            }
+
+            .prix-vin {
+                font-size: .82rem;
+            }
+
+            .carte-vin .btn-sm {
+                font-size: .62rem;
+                padding: .3rem .35rem;
+            }
+
+            .carte-vin form .form-control-sm {
+                width: 42px !important;
+                max-width: 42px;
+                font-size: .62rem;
+                padding: .25rem .2rem;
+            }
+
+            .carte-vin form .btn-bordeaux {
+                min-width: 0;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+
+            /* Bandeau livraison */
+            .bandeau-livraison {
+                padding: 28px 0;
+                margin-top: 38px !important;
+            }
+
+            .bandeau-livraison .container {
+                flex-direction: column;
+                align-items: stretch !important;
+                gap: 20px !important;
+            }
+
+            .bandeau-livraison .container > div {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .bandeau-livraison .pastille {
+                width: 54px;
+                height: 54px;
+                flex: 0 0 54px;
+                font-size: .72rem;
+            }
+
+            .bandeau-livraison .fs-2 {
+                font-size: 1.55rem !important;
+            }
+
+            /* Chatbot pleine largeur raisonnable */
+            .chatbot-button {
+                right: 14px;
+                bottom: 14px;
+                width: 46px;
+                height: 46px;
+            }
+
+            .chatbot-window {
+                left: 10px;
+                right: 10px;
+                bottom: 68px;
+                width: auto !important;
+                max-width: none;
+                height: min(62vh, 430px) !important;
+            }
+        }
+
+        /* =====================================================
+           TRÈS PETITS ÉCRANS : jusqu'à 380px
+        ===================================================== */
+
+        @media (max-width: 380px) {
+
+            .container {
+                padding-left: 9px;
+                padding-right: 9px;
+            }
+
+            .logo-cave {
+                font-size: .92rem;
+            }
+
+            .entete .container > .d-flex:last-child {
+                gap: 7px !important;
+            }
+
+            .entete .container > .d-flex:last-child > a i {
+                font-size: 1rem;
+            }
+
+            .hero-vin {
+                padding-top: 26px;
+            }
+
+            .hero-vin h1 {
+                font-size: 1.55rem;
+            }
+
+            .hero-vin p.lead {
+                font-size: .8rem;
+            }
+
+            .hero-vin .conteneur-bouteille {
+                height: 175px;
+                width: min(100%, 230px);
+            }
+
+            .bloc-recherche {
+                padding: 10px;
+            }
+
+            .categorie-rapide {
+                padding: 11px 5px;
+            }
+
+            .categorie-rapide .icone-cat {
+                width: 38px;
+                height: 38px;
+                font-size: 1rem;
+            }
+
+            .categorie-rapide .titre-cat {
+                font-size: .64rem;
+            }
+
+            .carte-vin .image-vin {
+                height: 125px;
+            }
+
+            .carte-vin .card-body {
+                padding: .42rem;
+            }
+
+            .nom-vin-carte {
+                font-size: .68rem;
+            }
+
+            .prix-vin {
+                font-size: .72rem;
+            }
+
+            .carte-vin form .form-control-sm {
+                width: 37px !important;
+                max-width: 37px;
+            }
+
+            .carte-vin .btn-sm {
+                font-size: .56rem;
+                padding: .27rem .25rem;
+            }
+        }
+
+        /* =====================================================
+           TABLETTE : 768px à 991px
+        ===================================================== */
+
+        @media (min-width: 768px) and (max-width: 991.98px) {
+
+            .entete .container {
+                flex-wrap: wrap !important;
+            }
+
+            .entete .container > .d-flex:last-child {
+                gap: 14px !important;
+            }
+
+            .hero-vin {
+                min-height: 470px;
+                padding: 52px 0;
+            }
+
+            .hero-vin h1 {
+                font-size: 2.15rem;
+            }
+
+            .hero-vin .conteneur-bouteille {
+                height: 78%;
+                max-width: 48%;
+            }
+
+            .bloc-recherche {
+                padding: 18px;
+            }
+
+            .bandeau-livraison .container {
+                justify-content: center !important;
+            }
+
+            .pied-cave {
+                padding-top: 36px;
+            }
+        }
+
+    
+        /* =====================================================
+           RESPONSIVE MOBILE - ESPACEMENT ET RESPIRATION
+           Version 2 : éviter l'effet "tout collé"
+        ===================================================== */
+
+        @media (max-width: 767.98px) {
+
+            /* Contenu général */
+            main,
+            section {
+                max-width: 100%;
+            }
+
+            /* Le bandeau doit respirer entre chaque avantage */
+            .bandeau-livraison {
+                padding: 34px 0 38px !important;
+                margin-top: 42px !important;
+            }
+
+            .bandeau-livraison .container {
+                gap: 28px !important;
+            }
+
+            .bandeau-livraison .container > div {
+                padding: 2px 0;
+            }
+
+            .bandeau-livraison .container > div > div:last-child {
+                padding-left: 3px;
+            }
+
+            .bandeau-livraison .fw-bold {
+                font-size: 1.08rem;
+                line-height: 1.3;
+                margin-bottom: 5px;
+            }
+
+            .bandeau-livraison .small {
+                font-size: .9rem !important;
+                line-height: 1.5;
+            }
+
+            .bandeau-livraison .pastille {
+                width: 62px;
+                height: 62px;
+                flex: 0 0 62px;
+            }
+
+            .bandeau-livraison .fs-2 {
+                font-size: 1.8rem !important;
+                flex: 0 0 auto;
+            }
+
+            /* Footer : beaucoup plus d'espace vertical */
+            /* Le padding-bottom réserve la place du bouton chatbot flottant
+               (46px de hauteur + 14px de marge + marge de sécurité)
+               pour qu'il ne recouvre jamais le texte du copyright. */
+            .pied-cave {
+                padding: 46px 0 90px !important;
+            }
+
+            .pied-cave > .container {
+                padding-left: 18px;
+                padding-right: 18px;
+            }
+
+            .pied-cave .row {
+                --bs-gutter-y: 0 !important;
+                display: block;
+            }
+
+            .pied-cave [class*="col-"] {
+                width: 100%;
+                margin-bottom: 42px;
+            }
+
+            .pied-cave [class*="col-"]:last-child {
+                margin-bottom: 0;
+            }
+
+            .pied-cave h6 {
+                font-size: 1.25rem !important;
+                line-height: 1.3;
+                margin-bottom: 16px !important;
+            }
+
+            .pied-cave p.small {
+                font-size: .92rem !important;
+                line-height: 1.75;
+                margin-bottom: 0;
+                max-width: 360px;
+            }
+
+            /* Réseaux sociaux */
+            .reseaux-sociaux {
+                margin-top: 20px !important;
+                display: flex;
+                gap: 12px;
+            }
+
+            .reseaux-sociaux a {
+                width: 42px;
+                height: 42px;
+                margin-right: 0;
+                flex: 0 0 42px;
+                font-size: 1rem;
+            }
+
+            /* Liens du footer : un vrai espace entre les lignes */
+            .pied-cave ul {
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+
+            .pied-cave ul li,
+            .pied-cave ul li.mb-2 {
+                margin-bottom: 15px !important;
+                line-height: 1.5;
+            }
+
+            .pied-cave ul li:last-child {
+                margin-bottom: 0 !important;
+            }
+
+            .pied-cave ul li a {
+                display: inline-block;
+                font-size: .95rem !important;
+                padding: 2px 0;
+            }
+
+            /* Newsletter */
+            .pied-cave .newsletter {
+                margin-top: 18px;
+                height: 50px;
+            }
+
+            .pied-cave .newsletter input {
+                height: 50px !important;
+                font-size: .92rem !important;
+                padding: 10px 14px !important;
+            }
+
+            .pied-cave .newsletter button {
+                height: 50px !important;
+                width: 58px !important;
+            }
+
+            /* Séparation nette avant le copyright */
+            .copyright-cave {
+                margin-top: 12px !important;
+                padding-top: 22px !important;
+                font-size: .75rem !important;
+                line-height: 1.7;
+            }
+        }
+
+        /* Très petit téléphone : on conserve l'espace,
+           mais on évite que les éléments deviennent trop grands */
+        @media (max-width: 380px) {
+
+            .bandeau-livraison .container {
+                gap: 24px !important;
+            }
+
+            .bandeau-livraison .fw-bold {
+                font-size: 1rem;
+            }
+
+            .bandeau-livraison .small {
+                font-size: .84rem !important;
+            }
+
+            .bandeau-livraison .pastille {
+                width: 56px;
+                height: 56px;
+                flex-basis: 56px;
+                font-size: .65rem;
+            }
+
+            .pied-cave {
+                padding-top: 40px !important;
+                padding-bottom: 96px !important;
+            }
+
+            .pied-cave [class*="col-"] {
+                margin-bottom: 38px;
+            }
+
+            .pied-cave h6 {
+                font-size: 1.15rem !important;
+            }
+
+            .pied-cave p.small,
+            .pied-cave ul li a {
+                font-size: .88rem !important;
+            }
+        }
+
+
+        /* =====================================================
+           EN-TETE COMPACTE + SIDEBAR COMPTE (mobile)
+        ===================================================== */
+
+        @media (max-width: 767.98px) {
+
+            .entete {
+                padding: 12px 0;
+            }
+
+            .entete .container {
+                gap: 10px !important;
+            }
+
+            .logo-cave {
+                font-size: 1.05rem;
+            }
+
+        }
+
+
+        .btn-toggle-sidebar {
+
+            background: transparent;
+            border: none;
+            color: #fff;
+            padding: 2px 4px;
+            line-height: 1;
+
+        }
+
+
+        .sidebar-compte {
+
+            width: 280px;
+
+        }
+
+
+        .sidebar-compte .offcanvas-header {
+
+            background: var(--noir);
+            color: #fff;
+            border-bottom: 3px solid var(--bordeaux);
+
+        }
+
+
+        .sidebar-compte .offcanvas-title {
+
+            font-family: 'Playfair Display', serif;
+            font-size: 1.05rem;
+
+        }
+
+
+        .sidebar-compte .offcanvas-body {
+
+            background: var(--creme);
+            padding: 18px;
+
+        }
+
+
+        .lien-sidebar {
+
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 13px 14px;
+            border-radius: 8px;
+            color: #2c2622;
+            font-weight: 600;
+            background: #fff;
+            border: 1px solid #efe8de;
+
+        }
+
+
+        .lien-sidebar:hover {
+
+            background: var(--bordeaux);
+            color: #fff;
+            border-color: var(--bordeaux);
+
+        }
+
+
+        .lien-sidebar i {
+
+            font-size: 1.1rem;
+            width: 22px;
+            text-align: center;
+
+        }
+
+
+        .lien-sidebar .badge-panier {
+
+            position: static;
+            margin-left: auto;
+
+        }
+
+    </style>
+
+</head>
+
+
+<body>
+
+
+<!-- =====================================================
+     BARRE SUPERIEURE
+===================================================== -->
+
+<div class="barre-haut">
+
+    <div class="container d-flex justify-content-between align-items-center flex-wrap">
+
+        <span>
+            <i class="bi bi-truck"></i>
+            Livraison rapide partout au Bénin
+        </span>
+
+        <span>
+            <i class="bi bi-telephone"></i>
+            Assistance : utilisez notre chatbot 🍷
+        </span>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     ENTETE
+===================================================== -->
+
+<div class="entete">
+
+    <div class="container d-flex justify-content-between align-items-center flex-wrap gap-2">
+
+        <a
+            href="accueil_client.php"
+            class="logo-cave"
+        >
+            🍷 CAVE <span>À VINS</span>
+        </a>
+
+
+        <div class="d-none d-lg-flex align-items-center gap-4">
+
+            <?php if(isset($_SESSION["client_id"])): ?>
+                <span class="nom-client">
+                    Bonjour,
+                    <strong class="text-white">
+                    <?php
+                    echo htmlspecialchars(
+                        $_SESSION["client_nom"] ?? ""
+                    );
+                    ?>
+                    </strong>
+                </span>
+
+                <a href="../avis/donner_avis.php">
+                    <i class="bi bi-star"></i>
+                    Avis
+                </a>
+
+                <?php if ($nombre_commandes_client > 0): ?>
+                    <a href="mes_commandes.php">
+                        <i class="bi bi-receipt"></i>
+                        Mes commandes
+                    </a>
+                <?php endif; ?>
+
+                <a href="mes_notifications.php" class="position-relative">
+                    <i class="bi bi-bell fs-5"></i>
+                    <?php if ($nombre_notifications > 0): ?>
+                        <span class="badge-panier">
+                            <?php echo $nombre_notifications; ?>
+                        </span>
+                    <?php endif; ?>
+                </a>
+
+                <a href="deconnexion_client.php">
+                    <i class="bi bi-box-arrow-right"></i>
+                    Déconnexion
+                </a>
+
+            <?php else: ?>
+                <a href="connexion_client.php">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                    Connexion / Inscription
+                </a>
+            <?php endif; ?>
+
+
+            <a
+                href="../panier/panier.php"
+                class="position-relative"
+            >
+
+                <i class="bi bi-cart3 fs-5"></i>
+
+                <?php if ($nombre_panier > 0): ?>
+
+                    <span class="badge-panier">
+
+                        <?php
+                        echo $nombre_panier;
+                        ?>
+
+                    </span>
+
+                <?php endif; ?>
+
+            </a>
+
+        </div>
+
+
+        <!-- Barre mobile : uniquement panier + bouton sidebar -->
+        <div class="d-flex d-lg-none align-items-center gap-3">
+
+            <a href="../panier/panier.php" class="position-relative text-white">
+
+                <i class="bi bi-cart3 fs-5"></i>
+
+                <?php if ($nombre_panier > 0): ?>
+
+                    <span class="badge-panier">
+                        <?php echo $nombre_panier; ?>
+                    </span>
+
+                <?php endif; ?>
+
+            </a>
+
+            <button class="btn-toggle-sidebar" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarCompte" aria-controls="sidebarCompte">
+                <i class="bi bi-list fs-3"></i>
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     SIDEBAR COMPTE (mobile)
+===================================================== -->
+
+<div class="offcanvas offcanvas-end sidebar-compte" tabindex="-1" id="sidebarCompte" aria-labelledby="sidebarCompteLabel">
+
+    <div class="offcanvas-header">
+
+        <h5 class="offcanvas-title" id="sidebarCompteLabel">
+            <?php if(isset($_SESSION["client_id"])): ?>
+                Bonjour, <?php echo htmlspecialchars($_SESSION["client_nom"] ?? ""); ?>
+            <?php else: ?>
+                Mon compte
+            <?php endif; ?>
+        </h5>
+
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Fermer"></button>
+
+    </div>
+
+    <div class="offcanvas-body d-flex flex-column gap-2">
+
+        <?php if(isset($_SESSION["client_id"])): ?>
+
+            <a href="../avis/donner_avis.php" class="lien-sidebar">
+                <i class="bi bi-star"></i> Avis
+            </a>
+
+            <?php if ($nombre_commandes_client > 0): ?>
+                <a href="mes_commandes.php" class="lien-sidebar">
+                    <i class="bi bi-receipt"></i> Mes commandes
+                </a>
+            <?php endif; ?>
+
+            <a href="mes_notifications.php" class="lien-sidebar">
+                <i class="bi bi-bell"></i> Notifications
+                <?php if ($nombre_notifications > 0): ?>
+                    <span class="badge-panier"><?php echo $nombre_notifications; ?></span>
+                <?php endif; ?>
+            </a>
+
+            <a href="deconnexion_client.php" class="lien-sidebar">
+                <i class="bi bi-box-arrow-right"></i> Déconnexion
+            </a>
+
+        <?php else: ?>
+
+            <a href="connexion_client.php" class="lien-sidebar">
+                <i class="bi bi-box-arrow-in-right"></i> Connexion / Inscription
+            </a>
+
+        <?php endif; ?>
+
+    </div>
+
+</div>
+
+<div class="hero-vin">
+
+    <div class="container position-relative" style="z-index:2;">
+
+        <div class="surtitre">100% Vins sélectionnés</div>
+
+        <h1 class="mt-2 mb-3">
+            Découvrez nos<br>
+            plus belles bouteilles
+        </h1>
+
+        <p class="lead">
+            Rouges, blancs, champagnes et promotions du moment,
+            livrés directement chez vous au Bénin.
+        </p>
+
+    </div>
+
+
+    <div class="conteneur-bouteille" id="conteneurBouteille">
+
+        <img
+            src="images/hero-vin.png"
+            alt="Bouteille et verre de vin rouge"
+            class="image-bouteille-hero"
+            id="bouteilleHero"
+            draggable="false"
+        >
+
+        <div class="astuce-rotation">
+            <i class="bi bi-arrow-left-right"></i>
+            Glissez pour incliner
+        </div>
+
+    </div>
+
+</div>
+
+
+<script>
+
+    //===========================================================
+    // Rotation 3D interactive de la bouteille du hero
+    // (léger balancement continu + contrôle à la souris / au doigt,
+    //  angle toujours limité pour que la bouteille ne disparaisse jamais)
+    //===========================================================
+
+    (function () {
+
+        const bouteille   = document.getElementById("bouteilleHero");
+        const conteneur   = document.getElementById("conteneurBouteille");
+
+        if (!bouteille || !conteneur) {
+            return;
+        }
+
+        const ANGLE_MAX      = 20;   // degrés max de chaque côté : jamais assez pour disparaître
+        const VITESSE_AUTO   = 0.04; // vitesse du balancement automatique
+
+        let temps            = 0;
+        let angle            = 0;
+        let angleManuel      = null;
+        let enGlissement     = false;
+        let dernierX         = 0;
+        let enPause          = false;
+
+        function appliquerRotation() {
+
+            bouteille.style.transform =
+                "rotateY(" + angle + "deg)";
+
+        }
+
+        function boucleAnimation() {
+
+            if (!enGlissement && !enPause) {
+
+                if (angleManuel !== null) {
+
+                    // retour en douceur vers le balancement automatique
+                    angleManuel += (0 - angleManuel) * 0.05;
+
+                    if (Math.abs(angleManuel) < 0.5) {
+                        angleManuel = null;
+                    }
+
+                    angle = angleManuel;
+
+                } else {
+
+                    temps += VITESSE_AUTO;
+                    angle = Math.sin(temps) * ANGLE_MAX;
+
+                }
+
+                appliquerRotation();
+
+            }
+
+            requestAnimationFrame(boucleAnimation);
+
+        }
+
+        requestAnimationFrame(boucleAnimation);
+
+
+        function demarrerGlissement(x) {
+            enGlissement = true;
+            dernierX = x;
+        }
+
+        function deplacerGlissement(x) {
+
+            if (!enGlissement) {
+                return;
+            }
+
+            const delta = x - dernierX;
+
+            angle += delta * 0.4;
+
+            if (angle > ANGLE_MAX)  angle = ANGLE_MAX;
+            if (angle < -ANGLE_MAX) angle = -ANGLE_MAX;
+
+            dernierX = x;
+            appliquerRotation();
+
+        }
+
+        function terminerGlissement() {
+
+            if (!enGlissement) {
+                return;
+            }
+
+            enGlissement = false;
+            angleManuel = angle;
+
+        }
+
+
+        // ---- Souris ----
+
+        conteneur.addEventListener("mousedown", function (e) {
+            demarrerGlissement(e.clientX);
+        });
+
+        window.addEventListener("mousemove", function (e) {
+            deplacerGlissement(e.clientX);
+        });
+
+        window.addEventListener("mouseup", terminerGlissement);
+
+
+        // ---- Tactile (mobile / tablette) ----
+
+        conteneur.addEventListener("touchstart", function (e) {
+            demarrerGlissement(e.touches[0].clientX);
+        }, { passive: true });
+
+        window.addEventListener("touchmove", function (e) {
+            deplacerGlissement(e.touches[0].clientX);
+        }, { passive: true });
+
+        window.addEventListener("touchend", terminerGlissement);
+
+
+        // ---- Pause au survol pour mieux regarder l'étiquette ----
+
+        conteneur.addEventListener("mouseenter", function () {
+            enPause = true;
+        });
+
+        conteneur.addEventListener("mouseleave", function () {
+            enPause = false;
+        });
+
+    })();
+
+</script>
+
+
+<!-- =====================================================
+     CONTENU
+===================================================== -->
+
+<div class="container">
+
+
+    <!-- =================================================
+         RECHERCHE / FILTRE (carte flottante sur le hero)
+    ================================================== -->
+
+    <form
+        action="accueil_client.php"
+        method="GET"
+        class="row g-2 bloc-recherche"
+    >
+
+        <div class="col-md-5">
+
+            <input
+                type="text"
+                name="recherche"
+                class="form-control"
+                placeholder="Rechercher un vin..."
+                value="<?php echo htmlspecialchars($recherche); ?>"
+            >
+
+        </div>
+
+
+        <div class="col-md-4">
+
+            <select
+                name="categorie"
+                class="form-select"
+            >
+
+                <option value="">
+                    Toutes les catégories
+                </option>
+
+
+                <?php while ($cat = $requete_categories->fetch()): ?>
+
+                    <option
+                        value="<?php echo $cat["id_categorie"]; ?>"
+                        <?php
+                        echo $id_categorie_filtre == $cat["id_categorie"]
+                            ? "selected"
+                            : "";
+                        ?>
+                    >
+
+                        <?php
+                        echo htmlspecialchars(
+                            $cat["libelle"]
+                        );
+                        ?>
+
+                    </option>
+
+                <?php endwhile; ?>
+
+            </select>
+
+        </div>
+
+
+        <div class="col-md-3">
+
+            <button
+                type="submit"
+                class="btn btn-violet w-100"
+            >
+
+                <i class="bi bi-search"></i>
+
+                Filtrer
+
+            </button>
+
+        </div>
+
+    </form>
+
+
+    <!-- =================================================
+         CATEGORIES RAPIDES
+    ================================================== -->
+
+    <div class="row g-3 mt-4">
+
+        <?php
+
+        $requete_categories_rapides = $connexion->query("
+
+            SELECT *
+            FROM categorie
+            WHERE statut = 'Actif'
+            ORDER BY libelle ASC
+            LIMIT 4
+
+        ");
+
+        $icones_categorie = ["🍷", "🥂", "🍾", "🍇"];
+        $i_icone = 0;
+
+        while ($cat_rapide = $requete_categories_rapides->fetch()):
+        ?>
+
+            <div class="col-6 col-md-3">
+
+                <a
+                    href="accueil_client.php?categorie=<?php echo $cat_rapide["id_categorie"]; ?>"
+                    class="categorie-rapide <?php echo ($id_categorie_filtre == $cat_rapide["id_categorie"]) ? "active" : ""; ?>"
+                >
+
+                    <div class="icone-cat">
+                        <?php echo $icones_categorie[$i_icone % count($icones_categorie)]; $i_icone++; ?>
+                    </div>
+
+                    <div class="titre-cat">
+                        <?php echo htmlspecialchars($cat_rapide["libelle"]); ?>
+                    </div>
+
+                    <div class="text-muted small mt-1">
+                        Voir tout <i class="bi bi-arrow-right"></i>
+                    </div>
+
+                </a>
+
+            </div>
+
+        <?php endwhile; ?>
+
+    </div>
+
+
+    <!-- =================================================
+         MESSAGE AJOUT PANIER
+    ================================================== -->
+
+    <?php if (isset($_GET["ajout"])): ?>
+
+        <div class="alert alert-success">
+
+            <i class="bi bi-check-circle"></i>
+
+            Article ajouté au panier !
+
+        </div>
+
+    <?php endif; ?>
+
+
+    <?php if (isset($_GET["erreur"]) && $_GET["erreur"] == "introuvable"): ?>
+
+        <div class="alert alert-warning">
+
+            <i class="bi bi-exclamation-triangle"></i>
+
+            Ce vin n'existe plus ou n'est plus disponible.
+
+        </div>
+
+    <?php endif; ?>
+
+
+    <!-- =================================================
+         LISTE DES VINS - 4 PAR LIGNE SUR DESKTOP
+    ================================================== -->
+
+    <div class="titre-section">
+        <h2>
+            <?php echo !empty($recherche) || !empty($id_categorie_filtre) ? "Résultats" : "Nos vins disponibles"; ?>
+        </h2>
+        <div class="trait"></div>
+    </div>
+
+    <div class="row g-3">
+
+        <?php
+
+        $aucun_vin = true;
+
+        while ($vin = $requete->fetch()) {
+
+            $aucun_vin = false;
+
+        ?>
+
+            <!-- 
+                MODIFICATION : 
+                - col-6 = 2 produits sur mobile
+                - col-md-4 = 3 produits sur tablette
+                - col-lg-3 = 4 produits sur desktop
+            -->
+            <div class="col-6 col-md-4 col-lg-3">
+
+                <div class="card carte-vin">
+
+
+                    <div class="image-vin-wrap">
+
+                        <?php if (!empty($vin["libelle_categorie"])): ?>
+
+                            <span class="ruban-cat">
+                                <?php echo htmlspecialchars($vin["libelle_categorie"]); ?>
+                            </span>
+
+                        <?php endif; ?>
+
+
+                        <?php if (!empty($vin["photo"])): ?>
+
+                            <img
+                                src="../vin/uploads/<?php echo htmlspecialchars($vin["photo"]); ?>"
+                                class="image-vin w-100"
+                                alt="<?php echo htmlspecialchars($vin["nom_vin"]); ?>"
+                            >
+
+                        <?php else: ?>
+
+                            <div
+                                class="image-vin w-100 d-flex align-items-center justify-content-center text-muted"
+                            >
+                                🍷
+                            </div>
+
+                        <?php endif; ?>
+
+                    </div>
+
+
+                    <div class="card-body">
+
+
+                        <h6 class="nom-vin-carte mb-1" title="<?php echo htmlspecialchars($vin["nom_vin"]); ?>">
+
+                            <?php
+                            echo htmlspecialchars(
+                                $vin["nom_vin"]
+                            );
+                            ?>
+
+                        </h6>
+
+
+                        <p class="text-muted small mb-1">
+
+                            <?php
+                            echo htmlspecialchars(
+                                $vin["couleur"]
+                            );
+                            ?>
+
+
+                            <?php if (!empty($vin["millesime"])): ?>
+
+                                •
+                                <?php
+                                echo htmlspecialchars(
+                                    $vin["millesime"]
+                                );
+                                ?>
+
+                            <?php endif; ?>
+
+                        </p>
+
+
+                        <span class="badge badge-stock mb-1">
+
+                            <i class="bi bi-check-circle"></i>
+
+                            En stock
+
+                        </span>
+
+
+                        <div
+                            class="d-flex justify-content-between align-items-center mt-1"
+                        >
+
+                            <span class="prix-vin">
+
+                                <?php
+                                echo number_format(
+                                    $vin["prix"],
+                                    0,
+                                    ',',
+                                    ' '
+                                );
+                                ?>
+
+                                FCFA
+
+                            </span>
+
+                        </div>
+
+
+                        <a
+                            href="../vin/voir_vin.php?id_vin=<?php echo $vin["id_vin"]; ?>"
+                            class="btn btn-outline-noir btn-sm w-100 mt-1"
+                        >
+
+                            <i class="bi bi-eye"></i>
+                            Détail
+
+                        </a>
+
+
+                        <form
+                            action="../panier/ajouter_panier.php"
+                            method="POST"
+                            class="d-flex align-items-center gap-1 mt-1"
+                        >
+
+                            <input
+                                type="hidden"
+                                name="id_vin"
+                                value="<?php echo $vin["id_vin"]; ?>"
+                            >
+
+
+                            <input
+                                type="number"
+                                name="quantite"
+                                value="1"
+                                min="1"
+                                max="<?php echo $vin["quantite_stock"]; ?>"
+                                class="form-control form-control-sm"
+                                style="width:60px;"
+                            >
+
+
+                            <button
+                                type="submit"
+                                class="btn btn-bordeaux btn-sm flex-grow-1"
+                            >
+
+                                <i class="bi bi-cart-plus"></i>
+
+                                Ajouter
+
+                            </button>
+
+                        </form>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        <?php
+
+        }
+
+        ?>
+
+
+        <?php if ($aucun_vin): ?>
+
+            <div class="col-12">
+
+                <p class="text-muted">
+
+                    Aucun vin ne correspond
+                    à votre recherche pour le moment.
+
+                </p>
+
+            </div>
+
+        <?php endif; ?>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     BANDEAU LIVRAISON
+===================================================== -->
+
+<div class="bandeau-livraison mt-5">
+
+    <div class="container d-flex flex-wrap align-items-center justify-content-center justify-content-md-between gap-4">
+
+        <div class="d-flex align-items-center gap-3">
+
+            <div class="pastille">
+                <span>Livraison<br>Gratuite</span>
+            </div>
+
+            <div>
+                <div class="fw-bold">Livraison offerte</div>
+                <div class="small" style="opacity:.85;">
+                    Pour toute commande dans Porto-Novo et environs
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="d-flex align-items-center gap-3">
+
+            <i class="bi bi-shield-check fs-2"></i>
+
+            <div>
+                <div class="fw-bold">Paiement sécurisé</div>
+                <div class="small" style="opacity:.85;">
+                    Mobile Money accepté
+                </div>
+            </div>
+
+        </div>
+
+
+        <div class="d-flex align-items-center gap-3">
+
+            <i class="bi bi-award fs-2"></i>
+
+            <div>
+                <div class="fw-bold">Vins sélectionnés</div>
+                <div class="small" style="opacity:.85;">
+                    Qualité vérifiée en cave
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+<!-- =====================================================
+     PIED DE PAGE
+===================================================== -->
+
+<footer class="pied-cave">
+
+    <div class="container">
+
+        <div class="row g-4">
+
+            <div class="col-md-4">
+
+                <h6>🍷 Cave à Vins</h6>
+
+                <p class="small">
+                    Votre cave en ligne au Bénin : une sélection de vins
+                    rouges, blancs et champagnes livrés chez vous.
+                </p>
+
+                <div class="reseaux-sociaux mt-3">
+
+                    <a href="#"><i class="bi bi-facebook"></i></a>
+                    <a href="#"><i class="bi bi-instagram"></i></a>
+                    <a href="https://wa.me/22998988316"><i class="bi bi-whatsapp"></i></a>
+
+                </div>
+
+            </div>
+
+
+            <div class="col-md-2">
+
+                <h6>Mon compte</h6>
+
+                <ul class="list-unstyled">
+                    <?php if (isset($_SESSION["client_id"])): ?>
+                        <li class="mb-2"><a href="mes_commandes.php">Mes commandes</a></li>
+                        <li class="mb-2"><a href="mes_notifications.php">Notifications</a></li>
+                        <li class="mb-2"><a href="modifier_client.php">Mon profil</a></li>
+                    <?php else: ?>
+                        <li class="mb-2"><a href="connexion_client.php">Connexion</a></li>
+                        <li class="mb-2"><a href="inscription.php">Créer un compte</a></li>
+                    <?php endif; ?>
+                    <li class="mb-2"><a href="../panier/panier.php">Mon panier</a></li>
+                </ul>
+
+            </div>
+
+
+            <div class="col-md-2">
+
+                <h6>Aide</h6>
+
+                <ul class="list-unstyled">
+                    <li class="mb-2"><a href="../avis/donner_avis.php">Donner un avis</a></li>
+                    <li class="mb-2"><a href="#" onclick="ouvrirChatbot(); return false;">Assistant en ligne</a></li>
+                </ul>
+
+            </div>
+
+
+            <div class="col-md-4">
+
+                <h6>Newsletter</h6>
+
+                <p class="small">
+                    Recevez nos nouveautés et promotions.
+                </p>
+
+                <form class="newsletter d-flex" onsubmit="return false;">
+
+                    <input
+                        type="email"
+                        class="form-control"
+                        placeholder="Votre email"
+                    >
+
+                    <button type="submit">
+                        <i class="bi bi-send"></i>
+                    </button>
+
+                </form>
+
+            </div>
+
+        </div>
+
+
+        <div class="copyright-cave text-center">
+            © <?php echo date("Y"); ?> Cave à Vins — Tous droits réservés.
+        </div>
+
+    </div>
+
+</footer>
+
+
+<!-- =====================================================
+     BOUTON CHATBOT (RÉDUIT)
+===================================================== -->
+
+<button
+    type="button"
+    id="chatbotButton"
+    class="chatbot-button"
+    onclick="ouvrirChatbot()"
+    aria-label="Ouvrir l'assistant"
+>
+
+    <i class="bi bi-chat-dots-fill"></i>
+
+    <span class="chatbot-notification">
+        1
+    </span>
+
+</button>
+
+
+<!-- =====================================================
+     FENETRE CHATBOT (RÉDUITE)
+===================================================== -->
+
+<div
+    id="chatbotWindow"
+    class="chatbot-window"
+>
+
+
+    <!-- HEADER -->
+
+    <div class="chatbot-header">
+
+        <div class="d-flex align-items-center justify-content-between">
+
+
+            <div class="d-flex align-items-center gap-2">
+
+                <div class="chatbot-avatar">
+
+                    🍷
+
+                </div>
+
+
+                <div>
+
+                    <div class="chatbot-title">
+
+                        Assistant Cave à Vins
+
+                    </div>
+
+
+                    <div class="chatbot-status">
+
+                        <span></span>
+
+                        En ligne
+
+                    </div>
+
+                </div>
+
+            </div>
+
+
+            <button
+                type="button"
+                class="btn btn-sm text-white"
+                onclick="fermerChatbot()"
+            >
+
+                <i class="bi bi-x-lg"></i>
+
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <!-- MESSAGES -->
+
+    <div
+        id="chatbotMessages"
+        class="chatbot-messages"
+    >
+
+        <div class="chatbot-message chatbot-bot">
+
+
+            <div class="chatbot-mini-avatar">
+
+                🍷
+
+            </div>
+
+
+            <div class="chatbot-bubble">
+
+                Bonjour 👋
+
+                <br><br>
+
+                Je suis votre assistant
+                de la <strong>Cave à Vins</strong>.
+
+                <br><br>
+
+                Je peux vous aider à connaître
+                les vins, les prix, les stocks,
+                les promotions et vos commandes.
+
+                <br><br>
+
+                <strong>
+                    Que souhaitez-vous savoir ?
+                </strong>
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- QUESTIONS RAPIDES (RÉDUITES) -->
+
+    <div class="chatbot-suggestions">
+
+
+        <button
+            type="button"
+            onclick="questionChatbot('Quels vins avez-vous ?')"
+        >
+
+            🍷 Vins
+
+        </button>
+
+
+        <button
+            type="button"
+            onclick="questionChatbot('Quel est le stock ?')"
+        >
+
+            📦 Stock
+
+        </button>
+
+
+        <button
+            type="button"
+            onclick="questionChatbot('Quelles sont les promotions ?')"
+        >
+
+            🏷️ Promotions
+
+        </button>
+
+
+        <button
+            type="button"
+            onclick="questionChatbot('Voir mes commandes')"
+        >
+
+            🛒 Commandes
+
+        </button>
+
+    </div>
+
+
+    <!-- ZONE DE SAISIE (RÉDUITE) -->
+
+    <div class="chatbot-footer">
+
+
+        <input
+            type="text"
+            id="chatbotInput"
+            class="form-control"
+            placeholder="Écrire un message..."
+            autocomplete="off"
+        >
+
+
+        <button
+            type="button"
+            id="chatbotSend"
+            class="chatbot-send"
+            onclick="envoyerMessageChatbot()"
+        >
+
+            <i class="bi bi-send-fill"></i>
+
+        </button>
+
+    </div>
+
+</div>
+
+
+<!-- Bootstrap JS -->
+
+<script src="../bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+
+
+<script>
+
+/* =====================================================
+   ELEMENTS CHATBOT
+===================================================== */
+
+const chatbotWindow =
+    document.getElementById("chatbotWindow");
+
+const chatbotInput =
+    document.getElementById("chatbotInput");
+
+const chatbotMessages =
+    document.getElementById("chatbotMessages");
+
+const chatbotSend =
+    document.getElementById("chatbotSend");
+
+
+/* =====================================================
+   OUVRIR CHATBOT
+===================================================== */
+
+function ouvrirChatbot() {
+
+    chatbotWindow.classList.add("active");
+
+    chatbotInput.focus();
+
+}
+
+
+/* =====================================================
+   FERMER CHATBOT
+===================================================== */
+
+function fermerChatbot() {
+
+    chatbotWindow.classList.remove("active");
+
+}
+
+
+/* =====================================================
+   PROTECTION TEXTE
+===================================================== */
+
+function securiserTexte(texte) {
+
+    const element =
+        document.createElement("div");
+
+    element.textContent = texte;
+
+    return element.innerHTML;
+
+}
+
+
+/* =====================================================
+   MESSAGE CLIENT
+===================================================== */
+
+function ajouterMessageClient(texte) {
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "chatbot-message chatbot-client";
+
+
+    message.innerHTML = `
+
+        <div class="chatbot-bubble">
+
+            ${securiserTexte(texte)}
+
+        </div>
+
+    `;
+
+
+    chatbotMessages.appendChild(message);
+
+
+    chatbotMessages.scrollTop =
+        chatbotMessages.scrollHeight;
+
+}
+
+
+/* =====================================================
+   MESSAGE BOT
+===================================================== */
+
+function ajouterMessageBot(texte) {
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "chatbot-message chatbot-bot";
+
+
+    message.innerHTML = `
+
+        <div class="chatbot-mini-avatar">
+
+            🍷
+
+        </div>
+
+
+        <div class="chatbot-bubble">
+
+            ${texte}
+
+        </div>
+
+    `;
+
+
+    chatbotMessages.appendChild(message);
+
+
+    chatbotMessages.scrollTop =
+        chatbotMessages.scrollHeight;
+
+}
+
+
+/* =====================================================
+   ENVOYER MESSAGE
+===================================================== */
+
+async function envoyerMessageChatbot() {
+
+    const texte =
+        chatbotInput.value.trim();
+
+
+    if (texte === "") {
+
+        return;
+
+    }
+
+
+    /* Message client */
+
+    ajouterMessageClient(texte);
+
+
+    chatbotInput.value = "";
+
+    chatbotSend.disabled = true;
+
+
+    /* Chargement */
+
+    const chargement =
+        document.createElement("div");
+
+
+    chargement.id =
+        "chatbotChargement";
+
+
+    chargement.className =
+        "chatbot-message chatbot-bot";
+
+
+    chargement.innerHTML = `
+
+        <div class="chatbot-mini-avatar">
+
+            🍷
+
+        </div>
+
+
+        <div class="chatbot-bubble">
+
+            <span class="spinner-border spinner-border-sm me-2"></span>
+
+            Je réfléchis...
+
+        </div>
+
+    `;
+
+
+    chatbotMessages.appendChild(chargement);
+
+
+    chatbotMessages.scrollTop =
+        chatbotMessages.scrollHeight;
+
+
+    try {
+
+
+        const donnees =
+            new FormData();
+
+
+        donnees.append(
+            "message",
+            texte
+        );
+
+
+        const reponse =
+            await fetch(
+                "chatbot_api.php",
+                {
+                    method: "POST",
+                    body: donnees
+                }
+            );
+
+
+        const resultat =
+            await reponse.json();
+
+
+        /* Supprimer chargement */
+
+        const chargementActuel =
+            document.getElementById(
+                "chatbotChargement"
+            );
+
+
+        if (chargementActuel) {
+
+            chargementActuel.remove();
+
+        }
+
+
+        if (resultat.success) {
+
+            ajouterMessageBot(
+                resultat.response
+            );
+
+        } else {
+
+            ajouterMessageBot(
+
+                "⚠️ " +
+
+                (
+                    resultat.message ||
+                    "Une erreur est survenue."
+                )
+
+            );
+
+        }
+
+    }
+
+    catch (erreur) {
+
+        console.error(erreur);
+
+
+        const chargementActuel =
+            document.getElementById(
+                "chatbotChargement"
+            );
+
+
+        if (chargementActuel) {
+
+            chargementActuel.remove();
+
+        }
+
+
+        ajouterMessageBot(
+
+            "❌ Impossible de contacter le serveur."
+
+        );
+
+    }
+
+
+    chatbotSend.disabled = false;
+
+    chatbotInput.focus();
+
+}
+
+
+/* =====================================================
+   QUESTION RAPIDE
+===================================================== */
+
+function questionChatbot(question) {
+
+    chatbotInput.value = question;
+
+    envoyerMessageChatbot();
+
+}
+
+
+/* =====================================================
+   TOUCHE ENTRÉE
+===================================================== */
+
+chatbotInput.addEventListener(
+    "keydown",
+    function(event) {
+
+        if (event.key === "Enter") {
+
+            event.preventDefault();
+
+            envoyerMessageChatbot();
+
+        }
+
+    }
+);
+
+</script>
+
+ <!-- Inclusion du chatbot -->
+<?php include 'chatbot.php'; ?>
+
+</body>
+
+</html>
