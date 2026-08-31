@@ -2366,6 +2366,11 @@ if (isset($_SESSION["client_id"])) {
                     Avis
                 </a>
 
+                <a href="ma_fidelite.php">
+                    <i class="bi bi-gift"></i>
+                    Ma fidélité
+                </a>
+
                 <?php if ($nombre_commandes_client > 0): ?>
                     <a href="mes_commandes.php">
                         <i class="bi bi-receipt"></i>
@@ -2473,6 +2478,10 @@ if (isset($_SESSION["client_id"])) {
 
             <a href="../avis/donner_avis.php" class="lien-sidebar">
                 <i class="bi bi-star"></i> Avis
+            </a>
+
+            <a href="ma_fidelite.php" class="lien-sidebar">
+                <i class="bi bi-gift"></i> Ma fidélité
             </a>
 
             <?php if ($nombre_commandes_client > 0): ?>
@@ -3162,6 +3171,7 @@ if (isset($_SESSION["client_id"])) {
                 <ul class="list-unstyled">
                     <?php if (isset($_SESSION["client_id"])): ?>
                         <li class="mb-2"><a href="mes_commandes.php">Mes commandes</a></li>
+                        <li class="mb-2"><a href="ma_fidelite.php">Ma fidélité</a></li>
                         <li class="mb-2"><a href="mes_notifications.php">Notifications</a></li>
                         <li class="mb-2"><a href="modifier_client.php">Mon profil</a></li>
                     <?php else: ?>
