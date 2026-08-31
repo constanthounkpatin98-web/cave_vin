@@ -3,6 +3,7 @@
 session_start();
 
 require_once("../connexion.php");
+require_once("../client/fonctions_fidelite.php");
 
 //===============================================
 // Sécurité : client connecté
@@ -100,6 +101,14 @@ $requete_insertion->execute([
     $reference_transaction,
     $id_commande,
 ]);
+
+
+//===============================================
+// Attribution des points de fidélité
+// (protégée contre la double attribution dans la fonction elle-même)
+//===============================================
+
+attribuer_points_fidelite($connexion, $_SESSION["client_id"], $id_commande, $montant);
 
 
 //===============================================
