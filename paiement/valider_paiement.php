@@ -7,12 +7,14 @@
 
     Ce fichier :
       1. Met à jour paiement.statut -> 'Validé'
-      2. Crée une notification pour l'administrateur (déclenche la sonnerie)
+      2. Attribue les points de fidélité correspondants
+      3. Crée une notification pour l'administrateur (déclenche la sonnerie)
 */
 
 session_start();
 
 require_once("../connexion.php");
+require_once("../client/fonctions_fidelite.php");
 
 header("Content-Type: application/json");
 
@@ -79,6 +81,13 @@ try {
         UPDATE paiement SET statut = 'Validé' WHERE id_paiement = ?
     ");
     $requete_maj->execute([$paiement["id_paiement"]]);
+
+    //===============================================
+    // Attribution des points de fidélité
+    // (protégée contre la double attribution dans la fonction elle-même)
+    //===============================================
+
+    attribuer_points_fidelite($connexion, $id_client, $id_commande, (float) $paiement["montant"]);
 
     //===============================================
     // Notification pour l'administrateur (sonnerie)
