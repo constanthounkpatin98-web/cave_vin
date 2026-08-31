@@ -7,6 +7,7 @@ header(
 );
 
 require_once("../connexion.php");
+require_once("../client/fonctions_fidelite.php");
 
 
 // ================================================================
@@ -641,6 +642,19 @@ try {
 
 
     // ============================================================
+    // ATTRIBUTION DES POINTS DE FIDÉLITÉ
+    // (protégée contre la double attribution dans la fonction elle-même ;
+    //  utilise la transaction MySQL déjà ouverte ci-dessus)
+    // ============================================================
+
+    $id_client_pour_points = $commande["id_client"] ?? null;
+
+    if ($id_client_pour_points) {
+        attribuer_points_fidelite($connexion, $id_client_pour_points, $id_commande, $amount);
+    }
+
+
+    // ============================================================
     // METTRE LA COMMANDE À JOUR
     // ============================================================
 
@@ -679,6 +693,88 @@ try {
 
         ]);
 
+    }
+
+
+    // ============================================================
+    // NOTIFICATION POUR L'ADMINISTRATEUR (sonnerie)
+    // ============================================================
+
+    try {
+
+        $id_client_notif =
+            $commande["id_client"] ?? null;
+
+        $nom_complet_client = "Un client";
+
+        if ($id_client_notif) {
+
+            $stmt_client =
+                $connexion->prepare(
+                    "SELECT nom, prenom FROM client WHERE id_client = ?"
+                );
+
+            $stmt_client->execute([
+                $id_client_notif
+            ]);
+
+            $client_notif =
+                $stmt_client->fetch(
+                    PDO::FETCH_ASSOC
+                );
+
+            if ($client_notif) {
+
+                $nom_complet_client =
+                    trim(
+                        ($client_notif["prenom"] ?? "") .
+                        " " .
+                        ($client_notif["nom"] ?? "")
+                    );
+
+                if ($nom_complet_client === "") {
+                    $nom_complet_client = "Un client";
+                }
+            }
+        }
+
+        $titre_notif = "Nouveau paiement reçu";
+
+        $message_notif =
+            $nom_complet_client .
+            " a payé " .
+            number_format($amount, 0, ',', ' ') .
+            " FCFA (KKiaPay) pour la commande #" .
+            $id_commande .
+            ". Réf : " .
+            $verifiedId;
+
+        $stmt_notif =
+            $connexion->prepare("
+                INSERT INTO notification (
+                    titre,
+                    message,
+                    statut,
+                    id_client,
+                    date_envoi
+                ) VALUES (
+                    ?,
+                    ?,
+                    'Non lue',
+                    ?,
+                    NOW()
+                )
+            ");
+
+        $stmt_notif->execute([
+            $titre_notif,
+            $message_notif,
+            $id_client_notif,
+        ]);
+
+    } catch (PDOException $e) {
+        // On ne bloque jamais le paiement si la notification échoue
+        error_log("Erreur notification KKiaPay : " . $e->getMessage());
     }
 
 
