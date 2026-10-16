@@ -331,6 +331,24 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
 .item-menu-notif:hover{ background:var(--fond); }
 .item-menu-notif.item-non-lue{ background:var(--bleu-clair); }
 
+.menu-compte-admin{
+    min-width:200px;
+    border-radius:12px;
+    border:1px solid var(--bordure);
+    box-shadow:0 12px 28px rgba(16,24,40,.12);
+    padding:.4rem;
+    margin-top:.5rem;
+}
+
+.menu-compte-admin .dropdown-item{
+    border-radius:8px;
+    padding:.55rem .7rem;
+    font-size:.86rem;
+    font-weight:500;
+}
+
+.menu-compte-admin .dropdown-item:hover{ background:var(--fond); }
+.menu-compte-admin .dropdown-item.text-danger:hover{ background:#fef2f2; }
 .icone-notif-item{ color:var(--bleu); margin-top:.15rem; flex-shrink:0; }
 .titre-notif-item{ font-size:.83rem; font-weight:700; }
 .texte-notif-item{ font-size:.83rem; }
@@ -655,13 +673,28 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
                     <?php endif; ?>
                 </div>
             </div>
-            <div class="d-flex align-items-center gap-2">
-                <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
-                <div class="d-none d-md-block">
-                    <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
-                    <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
-                </div>
-                <i class="bi bi-chevron-down text-muted small"></i>
+           <div class="dropdown">
+                <button type="button" class="btn btn-light border-0 p-0 d-flex align-items-center gap-2 dropdown-toggle-sans-fleche" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
+                    <div class="d-none d-md-block text-start">
+                        <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
+                        <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
+                    </div>
+                    <i class="bi bi-chevron-down text-muted small"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end menu-compte-admin">
+                    <li>
+                        <a class="dropdown-item" href="../tableau_bord/parametres.php">
+                            <i class="bi bi-person-circle me-2"></i> Mon profil
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-danger" href="../administrateur/deconnexion_admin.php" onclick="return confirm('Voulez-vous vraiment vous déconnecter ?');">
+                            <i class="bi bi-box-arrow-right me-2"></i> Déconnexion
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
