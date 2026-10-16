@@ -33,6 +33,25 @@ if ($points_dans_palier === 0 && $points_actuels > 0) {
     $points_restants = 0;
 }
 
+//===============================================
+// Montant restant avant le prochain gain de points (palier 10 000 FCFA)
+//===============================================
+
+$reste_avant_prochain_palier = $total_depense % 10000;
+$montant_restant_prochain_point = $reste_avant_prochain_palier === 0
+    ? 10000
+    : 10000 - $reste_avant_prochain_palier;
+
+//===============================================
+// Totaux all-time (gagnés / utilisés) + historique des opérations
+//===============================================
+
+$totaux_points   = obtenir_totaux_points_fidelite($connexion, $id_client);
+$points_gagnes_total   = (int) $totaux_points["total_gagne"];
+$points_utilises_total = (int) $totaux_points["total_utilise"];
+
+$historique_fidelite = obtenir_historique_fidelite($connexion, $id_client, 30);
+
 $vins_disponibles = vins_eligibles_recompense($connexion);
 
 //===============================================
@@ -338,6 +357,87 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
         border-radius: 10px;
         padding: 14px;
         height: 100%;
+    }
+
+    .mini-stat-fidelite {
+        border: 1px solid #efe8de;
+        border-radius: 10px;
+        padding: 14px 16px;
+        height: 100%;
+    }
+
+    .mini-stat-fidelite .valeur {
+        font-family: 'Playfair Display', serif;
+        font-weight: 700;
+        font-size: 1.1rem;
+        color: var(--bordeaux);
+    }
+
+    .mini-stat-fidelite .libelle {
+        font-size: 0.78rem;
+        color: #8a8078;
+    }
+
+    .ligne-historique-fidelite {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        column-gap: 14px;
+        row-gap: 6px;
+        border-bottom: 1px solid #efe8de;
+        padding: 12px 0;
+    }
+
+    .ligne-historique-fidelite:last-child {
+        border-bottom: none;
+    }
+
+    .desc-historique-fidelite {
+        min-width: 0;
+    }
+
+    .points-gagne-fidelite,
+    .points-utilise-fidelite {
+        white-space: nowrap;
+        text-align: right;
+        justify-self: end;
+        font-weight: 700;
+    }
+
+    .points-gagne-fidelite {
+        color: #1f7a45;
+    }
+
+    .points-utilise-fidelite {
+        color: var(--bordeaux);
+    }
+
+    .action-historique-fidelite {
+        justify-self: end;
+    }
+
+    /* Mobile : description sur toute la largeur, points + suppression en dessous */
+    @media (max-width: 575.98px) {
+        .ligne-historique-fidelite {
+            grid-template-columns: 1fr auto;
+            grid-template-areas:
+                "desc desc"
+                "points action";
+        }
+
+        .desc-historique-fidelite {
+            grid-area: desc;
+        }
+
+        .points-gagne-fidelite,
+        .points-utilise-fidelite {
+            grid-area: points;
+            justify-self: start;
+        }
+
+        .action-historique-fidelite {
+            grid-area: action;
+        }
     }
 
     .btn-bordeaux {
@@ -983,6 +1083,33 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
                 <?php endif; ?>
             </div>
 
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-md-3">
+                    <div class="mini-stat-fidelite">
+                        <div class="valeur"><?php echo number_format($montant_restant_prochain_point, 0, ',', ' '); ?> FCFA</div>
+                        <div class="libelle">Restant avant vos prochains points</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="mini-stat-fidelite">
+                        <div class="valeur"><?php echo $points_gagnes_total; ?></div>
+                        <div class="libelle">Points gagnés au total</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="mini-stat-fidelite">
+                        <div class="valeur"><?php echo $points_utilises_total; ?></div>
+                        <div class="libelle">Points utilisés au total</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="mini-stat-fidelite">
+                        <div class="valeur"><?php echo $recompenses_disponibles; ?></div>
+                        <div class="libelle">Récompenses disponibles</div>
+                    </div>
+                </div>
+            </div>
+
             <hr>
 
             <h5 class="mb-3">Vins éligibles à une récompense (≤ 10 000 FCFA)</h5>
@@ -1015,6 +1142,60 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
 
                     </div>
                 </div>
+                <?php endforeach; ?>
+
+            </div>
+
+            <?php endif; ?>
+
+            <hr>
+
+            <h5 class="mb-3">Historique de vos points</h5>
+
+            <?php if (isset($_GET["supprime"])): ?>
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle"></i> La ligne a été retirée de votre historique.
+            </div>
+            <?php endif; ?>
+
+            <?php if (empty($historique_fidelite)): ?>
+            <p class="text-muted">Aucune opération de fidélité pour le moment.</p>
+            <?php else: ?>
+
+            <div class="historique-fidelite-liste">
+
+                <?php foreach ($historique_fidelite as $ligne_historique): ?>
+
+                <?php
+                    $est_gain = $ligne_historique["type_operation"] === "Gagné";
+                    $points_ligne = (int) $ligne_historique["points"];
+
+                    $date_ligne = $ligne_historique["date_operation"]
+                        ?? $ligne_historique["date_creation"]
+                        ?? $ligne_historique["created_at"]
+                        ?? null;
+                ?>
+
+                <div class="ligne-historique-fidelite">
+                    <div class="desc-historique-fidelite">
+                        <div>
+                            <i class="bi <?php echo $est_gain ? "bi-plus-circle" : "bi-dash-circle"; ?>"></i>
+                            <?php echo htmlspecialchars($ligne_historique["description"] ?? ""); ?>
+                        </div>
+                        <?php if ($date_ligne): ?>
+                        <div class="text-muted small">
+                            <?php echo date("d/m/Y à H:i", strtotime($date_ligne)); ?>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <div class="<?php echo $est_gain ? "points-gagne-fidelite" : "points-utilise-fidelite"; ?>">
+                        <?php echo $est_gain ? "+" : "-"; ?><?php echo $points_ligne; ?> pt<?php echo $points_ligne > 1 ? "s" : ""; ?>
+                    </div>
+                    <a href="supprimer_historique_fidelite_client.php?id_historique=<?php echo $ligne_historique["id_historique"]; ?>" class="btn btn-outline-danger btn-sm action-historique-fidelite" onclick="return confirm('Retirer cette ligne de votre historique ?');">
+                        <i class="bi bi-trash"></i>
+                    </a>
+                </div>
+
                 <?php endforeach; ?>
 
             </div>
