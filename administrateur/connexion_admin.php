@@ -58,73 +58,104 @@ if(isset($_POST["email"]))
 
 <link rel="stylesheet" href="../bootstrap-5.3.8-dist/css/bootstrap.min.css">
 
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Poppins:wght@400;500;600&display=swap">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+<link rel="stylesheet" href="style-connexion-admin.css">
+
 </head>
 
-<body class="bg-light">
+<body>
 
-<div class="container mt-5">
+<div class="conteneur-connexion-admin">
 
-<div class="row justify-content-center">
+    <div class="badge-marque-admin">
+        <div class="cercle-icone">&#127863;</div>
+        <div>
+            <div class="nom-marque">La Cave du Bénin</div>
+            <div class="sous-titre-marque">Espace Administrateur</div>
+        </div>
+    </div>
 
-<div class="col-lg-5">
+    <div class="carte-connexion-admin">
 
-<div class="card shadow">
+        <div class="entete-connexion-admin">
+            <h3>Connexion</h3>
+            <p>Accédez à votre tableau de bord</p>
+        </div>
 
-<div class="card-header bg-dark text-white">
+        <div class="corps-connexion-admin">
 
-<h3 class="mb-0">Espace Administrateur</h3>
+            <?php if(isset($_GET['erreur']) && $_GET['erreur'] == 'champs'): ?>
 
-</div>
+            <div class="alert alert-danger">Veuillez remplir tous les champs.</div>
 
-<div class="card-body">
+            <?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'identifiants'): ?>
 
-<?php if(isset($_GET['erreur']) && $_GET['erreur'] == 'champs'): ?>
+            <div class="alert alert-danger">Email ou mot de passe incorrect.</div>
 
-<div class="alert alert-danger">Veuillez remplir tous les champs.</div>
+            <?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'bloque'): ?>
 
-<?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'identifiants'): ?>
+            <div class="alert alert-danger">Ce compte administrateur est inactif.</div>
 
-<div class="alert alert-danger">Email ou mot de passe incorrect.</div>
+            <?php endif; ?>
 
-<?php elseif(isset($_GET['erreur']) && $_GET['erreur'] == 'bloque'): ?>
+            <?php if(isset($_GET['reinitialise'])): ?>
 
-<div class="alert alert-danger">Ce compte administrateur est inactif.</div>
+            <div class="alert alert-success">Votre mot de passe a été réinitialisé avec succès. Vous pouvez vous connecter.</div>
 
-<?php endif; ?>
+            <?php endif; ?>
 
-<form action="connexion_admin.php" method="POST">
+            <form action="connexion_admin.php" method="POST">
 
-<div class="mb-3">
+                <div class="mb-3">
+                    <label class="form-label">Email</label>
+                    <input type="email" name="email" class="form-control" placeholder="admin@lacaveduBénin.com" required>
+                </div>
 
-<label class="form-label">Email</label>
+                <div class="mb-2">
+                    <label class="form-label">Mot de passe</label>
+                    <div class="groupe-mot-de-passe-admin">
+                        <input type="password" id="champ-mot-de-passe-admin" name="mot_de_passe" class="form-control" placeholder="••••••••" required>
+                        <span class="bascule-mot-de-passe-admin" onclick="basculerMotDePasseAdmin()">
+                            <i class="bi bi-eye-slash" id="icone-oeil-admin"></i>
+                        </span>
+                    </div>
+                </div>
 
-<input type="email" name="email" class="form-control" required>
+                <button type="submit" class="btn btn-connexion-admin w-100">Se connecter</button>
 
-</div>
+                <div class="separateur-connexion-admin">ou</div>
 
-<div class="mb-3">
+                <a href="mot_de_passe_oublie.php" class="lien-mot-de-passe-oublie">&#128273; Mot de passe oublié ?</a>
 
-<label class="form-label">Mot de passe</label>
+            </form>
 
-<input type="password" name="mot_de_passe" class="form-control" required>
+        </div>
 
-</div>
-
-<button type="submit" class="btn btn-dark w-100">Se connecter</button>
-
-</form>
-
-</div>
-
-</div>
-
-</div>
-
-</div>
+    </div>
 
 </div>
 
 <script src="../bootstrap-5.3.8-dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+function basculerMotDePasseAdmin() {
+    const champ = document.getElementById("champ-mot-de-passe-admin");
+    const icone = document.getElementById("icone-oeil-admin");
+
+    if (champ.type === "password") {
+        champ.type = "text";
+        icone.classList.remove("bi-eye-slash");
+        icone.classList.add("bi-eye");
+    } else {
+        champ.type = "password";
+        icone.classList.remove("bi-eye");
+        icone.classList.add("bi-eye-slash");
+    }
+}
+</script>
 
 </body>
 
