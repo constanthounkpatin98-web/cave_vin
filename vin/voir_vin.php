@@ -22,11 +22,13 @@ $id_vin = $_GET["id_vin"];
 
 $requete = $connexion->prepare("
 
-SELECT vin.*, categorie.libelle AS libelle_categorie
+SELECT vin.*, categorie.libelle AS libelle_categorie, cepage.nom_cepage AS nom_cepage
 
 FROM vin
 
 LEFT JOIN categorie ON vin.id_categorie = categorie.id_categorie
+
+LEFT JOIN cepage ON vin.id_cepage = cepage.id_cepage
 
 WHERE vin.id_vin = ?
 
@@ -1112,6 +1114,12 @@ img, table, input, button, select, textarea {
                 </a>
 
 
+                <a href="../client/ma_fidelite.php">
+                    <i class="bi bi-gift"></i>
+                    Ma fidélité
+                </a>
+
+
                 <?php if ($nombre_commandes_client > 0): ?>
 
                     <a href="../client/mes_commandes.php">
@@ -1229,6 +1237,10 @@ img, table, input, button, select, textarea {
                 <i class="bi bi-star"></i> Avis
             </a>
 
+            <a href="../client/ma_fidelite.php" class="lien-sidebar">
+                <i class="bi bi-gift"></i> Ma fidélité
+            </a>
+
             <?php if ($nombre_commandes_client > 0): ?>
                 <a href="../client/mes_commandes.php" class="lien-sidebar">
                     <i class="bi bi-receipt"></i> Mes commandes
@@ -1327,6 +1339,12 @@ img, table, input, button, select, textarea {
 <?php if(!empty($vin["millesime"])): ?>
 
 • Millésime <?php echo htmlspecialchars($vin["millesime"]); ?>
+
+<?php endif; ?>
+
+<?php if(!empty($vin["nom_cepage"])): ?>
+
+• Cépage <?php echo htmlspecialchars($vin["nom_cepage"]); ?>
 
 <?php endif; ?>
 
@@ -1590,6 +1608,7 @@ echo str_repeat("★", $moyenne) . str_repeat("☆", 5 - $moyenne);
                 <ul class="list-unstyled">
                     <?php if (isset($_SESSION["client_id"])): ?>
                         <li class="mb-2"><a href="../client/mes_commandes.php">Mes commandes</a></li>
+                        <li class="mb-2"><a href="../client/ma_fidelite.php">Ma fidélité</a></li>
                         <li class="mb-2"><a href="../client/mes_notifications.php">Notifications</a></li>
                         <li class="mb-2"><a href="../client/modifier_client.php">Mon profil</a></li>
                     <?php else: ?>
