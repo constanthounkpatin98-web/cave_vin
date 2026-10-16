@@ -1,5 +1,7 @@
 <?php
 
+date_default_timezone_set('Africa/Porto-Novo');
+
 session_start();
 
 require_once("../connexion.php");
@@ -39,6 +41,27 @@ function calculer_croissance($actuel, $precedent)
 
 $nombre_commandes = $connexion->query("SELECT COUNT(*) AS total FROM commande")->fetch()["total"];
 
+//===============================================
+// Statistiques du jour même (ce qui manquait : le tableau
+// affichait le total depuis toujours sous le libellé "Commandes",
+// avec juste en dessous un "% ce mois" — ce qui donnait l'impression
+// trompeuse que le chiffre concernait le jour/mois en cours)
+//===============================================
+
+$aujourd_hui = date("Y-m-d");
+
+$commandes_aujourdhui = $connexion->prepare("
+    SELECT COUNT(*) AS total FROM commande WHERE DATE(date_commande) = ?
+");
+$commandes_aujourdhui->execute([$aujourd_hui]);
+$commandes_aujourdhui = $commandes_aujourdhui->fetch()["total"];
+
+$ca_aujourdhui = $connexion->prepare("
+    SELECT COALESCE(SUM(montant),0) AS total FROM paiement WHERE statut = 'Validé' AND DATE(date_paiement) = ?
+");
+$ca_aujourdhui->execute([$aujourd_hui]);
+$ca_aujourdhui = $ca_aujourdhui->fetch()["total"];
+
 $chiffre_affaires = $connexion->query("
     SELECT COALESCE(SUM(montant),0) AS total FROM paiement WHERE statut = 'Validé'
 ")->fetch()["total"];
@@ -63,6 +86,16 @@ $commandes_en_cours = $connexion->query("
 
 $paiements_valides = $connexion->query("
     SELECT COUNT(*) AS total FROM paiement WHERE statut = 'Validé'
+")->fetch()["total"];
+
+//===============================================
+// Répartition payées / en attente de paiement
+// (une commande = au plus un paiement, cf. contrainte UNIQUE sur paiement.id_commande)
+//===============================================
+
+$commandes_payees          = $paiements_valides;
+$commandes_en_attente_paiement = $connexion->query("
+    SELECT COUNT(*) AS total FROM commande WHERE statut = 'En attente'
 ")->fetch()["total"];
 
 
@@ -219,6 +252,54 @@ $avis_en_attente = $connexion->query("SELECT COUNT(*) AS total FROM avis WHERE s
 
 $notifications_total = $connexion->query("SELECT COUNT(*) AS total FROM notification")->fetch()["total"];
 $notifications_non_lues = $connexion->query("SELECT COUNT(*) AS total FROM notification WHERE statut = 'Non lue'")->fetch()["total"];
+
+$requete_notif_recentes = $connexion->query("
+    SELECT id_notification, titre, message, statut, id_client, date_envoi
+    FROM notification
+    ORDER BY date_envoi DESC
+    LIMIT 8
+");
+$notifications_recentes = $requete_notif_recentes->fetchAll();
+
+
+//===============================================
+// Fidélité (Étape 8 du cahier des charges)
+//===============================================
+
+$nombre_clients_fidelises = $connexion->query("
+    SELECT COUNT(*) AS total FROM fidelite WHERE total_depense > 0
+")->fetch()["total"];
+
+$total_points_distribues = $connexion->query("
+    SELECT COALESCE(SUM(points), 0) AS total
+    FROM historique_fidelite
+    WHERE type_operation = 'Gagné'
+")->fetch()["total"];
+
+$nombre_recompenses_utilisees = $connexion->query("
+    SELECT COUNT(*) AS total FROM recompense_utilisee
+")->fetch()["total"];
+
+$points_en_circulation = $connexion->query("
+    SELECT COALESCE(SUM(points_actuels), 0) AS total FROM fidelite
+")->fetch()["total"];
+
+$requete_top_clients_fidelite = $connexion->query("
+    SELECT client.nom, client.prenom, fidelite.points_actuels, fidelite.total_depense
+    FROM fidelite
+    INNER JOIN client ON fidelite.id_client = client.id_client
+    WHERE fidelite.points_actuels > 0
+    ORDER BY fidelite.points_actuels DESC
+    LIMIT 5
+");
+
+$top_clients_fidelite = [];
+$top_clients_fidelite_max = 1;
+
+while ($ligne = $requete_top_clients_fidelite->fetch()) {
+    $top_clients_fidelite[] = $ligne;
+    $top_clients_fidelite_max = max($top_clients_fidelite_max, (int) $ligne["points_actuels"]);
+}
 
 
 //===============================================
@@ -427,6 +508,7 @@ function date_francaise($timestamp)
     --jaune:       #f59e0b;
     --rouge:       #ef4444;
     --violet:      #7c3aed;
+    --or:          #c9a24b;
     --cyan:        #06b6d4;
     --fond:        #f4f6fb;
     --carte:       #ffffff;
@@ -592,6 +674,70 @@ body{
     display:flex; align-items:center; justify-content:center;
 }
 
+.dropdown-toggle-sans-fleche::after{ display:none; }
+
+button.cloche-notif{ background:transparent; border:0; line-height:1; }
+
+.menu-notif{
+    width:340px;
+    max-width:90vw;
+    border-radius:12px;
+    border:1px solid var(--bordure);
+    box-shadow:0 12px 28px rgba(16,24,40,.12);
+    overflow:hidden;
+}
+
+.entete-menu-notif{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    padding:.8rem 1rem;
+    border-bottom:1px solid var(--bordure);
+    font-weight:700;
+    font-size:.85rem;
+}
+
+.entete-menu-notif a{ font-size:.76rem; font-weight:600; color:var(--bleu); text-decoration:none; }
+
+.item-menu-notif{
+    display:flex;
+    align-items:flex-start;
+    gap:.7rem;
+    padding:.7rem 1rem;
+    text-decoration:none;
+    color:var(--texte);
+    border-bottom:1px solid var(--bordure);
+}
+
+.item-menu-notif:last-child{ border-bottom:none; }
+.item-menu-notif:hover{ background:var(--fond); }
+.item-menu-notif.item-non-lue{ background:var(--bleu-clair); }
+
+.icone-notif-item{ color:var(--bleu); margin-top:.15rem; flex-shrink:0; }
+.titre-notif-item{ font-size:.83rem; font-weight:700; }
+.texte-notif-item{ font-size:.83rem; }
+.heure-notif-item{ font-size:.72rem; color:var(--texte-att); margin-top:.15rem; }
+.item-vide-notif{ padding:1.2rem 1rem; font-size:.83rem; color:var(--texte-att); text-align:center; }
+
+.menu-compte-admin{
+    min-width:200px;
+    border-radius:12px;
+    border:1px solid var(--bordure);
+    box-shadow:0 12px 28px rgba(16,24,40,.12);
+    padding:.4rem;
+    margin-top:.5rem;
+}
+
+.menu-compte-admin .dropdown-item{
+    border-radius:8px;
+    padding:.55rem .7rem;
+    font-size:.86rem;
+    font-weight:500;
+}
+
+.menu-compte-admin .dropdown-item:hover{ background:var(--fond); }
+.menu-compte-admin .dropdown-item.text-danger:hover{ background:#fef2f2; }
+
 .zone-corps{ padding:1.7rem 1.8rem 2.5rem; }
 
 .entete-page h2{ font-weight:800; margin-bottom:.15rem; }
@@ -645,6 +791,48 @@ body{
 .evolution-positive{ color:var(--vert); }
 .evolution-negative{ color:var(--rouge); }
 .lien-stat{ font-size:.76rem; font-weight:600; color:var(--bleu); text-decoration:none; }
+
+/* ---------- Correctif débordement des cartes stat sur mobile ---------- */
+
+.carte-stat > div:last-child{
+    min-width: 0;
+}
+
+.carte-stat .valeur-stat,
+.carte-stat .text-muted.small,
+.carte-stat .evolution-stat{
+    overflow-wrap: break-word;
+}
+
+@media (max-width: 575.98px){
+
+    .carte-stat{
+        padding: .85rem .9rem;
+        gap: .6rem;
+    }
+
+    .icone-stat{
+        width: 38px;
+        height: 38px;
+        font-size: 1rem;
+    }
+
+    .carte-stat .libelle-stat{
+        font-size: .64rem;
+    }
+
+    .carte-stat .valeur-stat{
+        font-size: 1.1rem;
+        line-height: 1.2;
+    }
+
+    .carte-stat .text-muted.small,
+    .carte-stat .evolution-stat,
+    .carte-stat .lien-stat{
+        font-size: .66rem;
+    }
+
+}
 
 /* ---------- En-têtes de cartes ---------- */
 
@@ -723,6 +911,42 @@ body{
 }
 .ligne-resume .libelle-resume{ display:flex; align-items:center; gap:.55rem; }
 .puce-ronde{ width:9px; height:9px; border-radius:50%; display:inline-block; }
+
+/* ---------- Correctif débordement carte Paiements ---------- */
+
+.zone-legende-paiements{ min-width:0; }
+
+.ligne-resume-paiement{
+    flex-wrap: wrap;
+    row-gap: 2px;
+}
+
+.ligne-resume-paiement .libelle-resume{
+    flex-shrink: 0;
+}
+
+.montant-resume-paiement{
+    white-space: nowrap;
+    margin-left: auto;
+    padding-left: .5rem;
+}
+
+@media (max-width: 420px){
+
+    .bloc-paiements-resume{
+        flex-direction: column;
+        align-items: flex-start !important;
+    }
+
+    .canvas-paiements{
+        margin: 0 auto 10px;
+    }
+
+    .zone-legende-paiements{
+        width: 100%;
+    }
+
+}
 
 /* ---------- Activité récente ---------- */
 
@@ -822,19 +1046,59 @@ body{
         <button class="btn btn-light border-0 d-lg-none" id="btnMenuMobile"><i class="bi bi-list fs-4"></i></button>
         <div class="date-jour"><i class="bi bi-calendar3"></i> <?php echo date_francaise(time()); ?></div>
         <div class="zone-droite">
-            <div class="cloche-notif">
-                <i class="bi bi-bell"></i>
-                <?php if($notifications_non_lues > 0): ?>
-                    <span class="point-badge"><?php echo min($notifications_non_lues, 99); ?></span>
-                <?php endif; ?>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-                <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
-                <div class="d-none d-md-block">
-                    <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
-                    <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
+            <div class="dropdown">
+                <button type="button" class="btn btn-light border-0 p-0 cloche-notif dropdown-toggle-sans-fleche" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+                    <i class="bi bi-bell"></i>
+                    <?php if($notifications_non_lues > 0): ?>
+                        <span class="point-badge"><?php echo min($notifications_non_lues, 99); ?></span>
+                    <?php endif; ?>
+                </button>
+                <div class="dropdown-menu dropdown-menu-end menu-notif p-0">
+                    <div class="entete-menu-notif">
+                        <span>Notifications</span>
+                        <a href="../notification/liste_notification.php">Tout voir</a>
+                    </div>
+                    <?php if(empty($notifications_recentes)): ?>
+                        <div class="item-vide-notif">Aucune notification pour le moment.</div>
+                    <?php else: ?>
+                        <?php foreach($notifications_recentes as $notif): ?>
+                        <a href="../notification/liste_notification.php?id=<?php echo (int)$notif['id_notification']; ?>"
+                           class="item-menu-notif <?php echo ($notif['statut'] ?? '') === 'Non lue' ? 'item-non-lue' : ''; ?>">
+                            <i class="bi bi-bell-fill icone-notif-item"></i>
+                            <div class="flex-grow-1">
+                                <?php if(!empty($notif['titre'])): ?>
+                                <div class="titre-notif-item"><?php echo htmlspecialchars($notif['titre']); ?></div>
+                                <?php endif; ?>
+                                <div class="texte-notif-item"><?php echo htmlspecialchars($notif['message'] ?? ''); ?></div>
+                                <div class="heure-notif-item"><?php echo temps_ecoule($notif['date_envoi'] ?? null); ?></div>
+                            </div>
+                        </a>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
-                <i class="bi bi-chevron-down text-muted small"></i>
+            </div>
+            <div class="dropdown">
+                <button type="button" class="btn btn-light border-0 p-0 d-flex align-items-center gap-2 dropdown-toggle-sans-fleche" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
+                    <div class="d-none d-md-block text-start">
+                        <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
+                        <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
+                    </div>
+                    <i class="bi bi-chevron-down text-muted small"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end menu-compte-admin">
+                    <li>
+                        <a class="dropdown-item" href="parametres.php">
+                            <i class="bi bi-person-circle me-2"></i> Mon profil
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-danger" href="../administrateur/deconnexion_admin.php" onclick="return confirm('Voulez-vous vraiment vous déconnecter ?');">
+                            <i class="bi bi-box-arrow-right me-2"></i> Déconnexion
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
@@ -852,51 +1116,59 @@ body{
         <!-- ===== Cartes statistiques ===== -->
         <div class="row g-3 mb-3">
 
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-md-4 col-xl-2">
                 <div class="carte carte-stat h-100">
                     <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-cart-check"></i></div>
                     <div>
-                        <div class="libelle-stat">Commandes</div>
+                        <div class="libelle-stat">Commandes au total</div>
                         <div class="valeur-stat"><?php echo number_format($nombre_commandes, 0, ',', ' '); ?></div>
-                        <div class="evolution-stat <?php echo $croissance_commandes >= 0 ? 'evolution-positive' : 'evolution-negative'; ?>">
-                            <i class="bi bi-arrow-<?php echo $croissance_commandes >= 0 ? 'up' : 'down'; ?>"></i>
-                            <?php echo abs($croissance_commandes); ?>% ce mois
+                        <div class="text-muted small mt-1">
+                            <?php echo number_format($commandes_payees, 0, ',', ' '); ?> payée<?php echo $commandes_payees > 1 ? "s" : ""; ?> · <?php echo number_format($commandes_en_attente_paiement, 0, ',', ' '); ?> en attente de paiement
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-md-4 col-xl-2">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--vert);"><i class="bi bi-cash-coin"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-calendar-day"></i></div>
+                    <div>
+                        <div class="libelle-stat">Aujourd'hui</div>
+                        <div class="valeur-stat"><?php echo number_format($commandes_aujourdhui, 0, ',', ' '); ?> commande<?php echo $commandes_aujourdhui > 1 ? "s" : ""; ?></div>
+                        <div class="text-muted small mt-1"><?php echo number_format($ca_aujourdhui, 0, ',', ' '); ?> F encaissés</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-md-4 col-xl-2">
+                <div class="carte carte-stat h-100">
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-cash-coin"></i></div>
                     <div>
                         <div class="libelle-stat">Chiffre d'affaires</div>
                         <div class="valeur-stat"><?php echo number_format($chiffre_affaires, 0, ',', ' '); ?> F</div>
-                        <div class="evolution-stat <?php echo $croissance_ca >= 0 ? 'evolution-positive' : 'evolution-negative'; ?>">
-                            <i class="bi bi-arrow-<?php echo $croissance_ca >= 0 ? 'up' : 'down'; ?>"></i>
-                            <?php echo abs($croissance_ca); ?>% ce mois
+                        <div class="text-muted small mt-1">
+                            <?php echo number_format($ca_ce_mois, 0, ',', ' '); ?> F ce mois-ci
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-md-4 col-xl-2">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--violet);"><i class="bi bi-people"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-people"></i></div>
                     <div>
                         <div class="libelle-stat">Clients</div>
                         <div class="valeur-stat"><?php echo number_format($nombre_clients, 0, ',', ' '); ?></div>
-                        <div class="evolution-stat <?php echo $croissance_clients >= 0 ? 'evolution-positive' : 'evolution-negative'; ?>">
-                            <i class="bi bi-arrow-<?php echo $croissance_clients >= 0 ? 'up' : 'down'; ?>"></i>
-                            <?php echo abs($croissance_clients); ?>% ce mois
+                        <div class="text-muted small mt-1">
+                            +<?php echo number_format($clients_ce_mois, 0, ',', ' '); ?> nouveau<?php echo $clients_ce_mois > 1 ? "x" : ""; ?> ce mois-ci
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-md-4 col-xl-2">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--jaune);"><i class="bi bi-box-seam"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-box-seam"></i></div>
                     <div>
                         <div class="libelle-stat">Produits (vins)</div>
                         <div class="valeur-stat"><?php echo number_format($nombre_vins, 0, ',', ' '); ?></div>
@@ -905,16 +1177,85 @@ body{
                 </div>
             </div>
 
-        </div>
-
-        <div class="row g-3 mb-3">
-            <div class="col-6 col-xl-3">
+            <div class="col-6 col-md-4 col-xl-2">
                 <div class="carte carte-stat h-100">
                     <div class="icone-stat" style="background:var(--rouge);"><i class="bi bi-exclamation-triangle"></i></div>
                     <div>
                         <div class="libelle-stat">Stock faible</div>
                         <div class="valeur-stat"><?php echo number_format($stock_faible_nb, 0, ',', ' '); ?></div>
                         <a href="../vin/liste_vin.php?filtre=stock_faible" class="lien-stat">Voir les détails</a>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ===== Fidélité ===== -->
+        <div class="row g-3 mb-3">
+
+            <div class="col-6 col-xl-3">
+                <div class="carte carte-stat h-100">
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-heart-fill"></i></div>
+                    <div>
+                        <div class="libelle-stat">Clients fidélisés</div>
+                        <div class="valeur-stat"><?php echo number_format($nombre_clients_fidelises, 0, ',', ' '); ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-xl-3">
+                <div class="carte carte-stat h-100">
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-stars"></i></div>
+                    <div>
+                        <div class="libelle-stat">Points distribués</div>
+                        <div class="valeur-stat"><?php echo number_format($total_points_distribues, 0, ',', ' '); ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-xl-3">
+                <div class="carte carte-stat h-100">
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-gift-fill"></i></div>
+                    <div>
+                        <div class="libelle-stat">Récompenses utilisées</div>
+                        <div class="valeur-stat"><?php echo number_format($nombre_recompenses_utilisees, 0, ',', ' '); ?></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-6 col-xl-3">
+                <div class="carte carte-stat h-100">
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-wallet2"></i></div>
+                    <div>
+                        <div class="libelle-stat">Points en circulation</div>
+                        <div class="valeur-stat"><?php echo number_format($points_en_circulation, 0, ',', ' '); ?></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="row g-3 mb-3">
+            <div class="col-lg-6">
+                <div class="carte h-100">
+                    <div class="entete-carte">
+                        <h6>Top 5 clients fidèles</h6>
+                    </div>
+                    <div class="corps-carte">
+                        <?php if (empty($top_clients_fidelite)): ?>
+                        <p class="text-muted small mb-0">Aucun client fidélisé pour le moment.</p>
+                        <?php endif; ?>
+                        <?php foreach ($top_clients_fidelite as $i => $c):
+                            $pct = round(($c["points_actuels"] / $top_clients_fidelite_max) * 100);
+                        ?>
+                        <div class="item-top-vin">
+                            <div class="en-tete-top">
+                                <span><span class="rang-vin"><?php echo $i + 1; ?></span><?php echo htmlspecialchars($c["prenom"] . " " . $c["nom"]); ?></span>
+                                <span class="fw-semibold"><?php echo $c["points_actuels"]; ?> pts</span>
+                            </div>
+                            <div class="barre-progression-fine"><span style="width:<?php echo $pct; ?>%; background:var(--or);"></span></div>
+                        </div>
+                        <?php endforeach; ?>
                     </div>
                 </div>
             </div>
@@ -1009,9 +1350,9 @@ body{
                         <h6>Paiements</h6>
                         <a href="../paiement/liste_paiement.php">Voir tout</a>
                     </div>
-                    <div class="corps-carte d-flex align-items-center gap-3">
-                        <canvas id="graphiquePaiements" width="120" height="120" style="max-width:120px;"></canvas>
-                        <div class="flex-grow-1">
+                    <div class="corps-carte d-flex align-items-center gap-3 bloc-paiements-resume">
+                        <canvas id="graphiquePaiements" width="120" height="120" style="max-width:120px;" class="canvas-paiements"></canvas>
+                        <div class="flex-grow-1 zone-legende-paiements">
                             <div class="fw-bold fs-5"><?php echo number_format($total_encaisse, 0, ',', ' '); ?> F</div>
                             <div class="text-muted small mb-2">Total encaissé</div>
                             <?php
@@ -1019,9 +1360,9 @@ body{
                             foreach($paiements_par_statut as $statut => $info):
                                 $couleur = $couleurs_paiement[$statut] ?? 'var(--texte-att)';
                             ?>
-                            <div class="ligne-resume">
+                            <div class="ligne-resume ligne-resume-paiement">
                                 <span class="libelle-resume"><span class="puce-ronde" style="background:<?php echo $couleur; ?>;"></span><?php echo htmlspecialchars($statut); ?></span>
-                                <span class="fw-semibold"><?php echo number_format($info["total"], 0, ',', ' '); ?> F (<?php echo $info["nb"]; ?>)</span>
+                                <span class="fw-semibold montant-resume-paiement"><?php echo number_format($info["total"], 0, ',', ' '); ?> F (<?php echo $info["nb"]; ?>)</span>
                             </div>
                             <?php endforeach; ?>
                         </div>
@@ -1257,6 +1598,6 @@ btnMenuMobile.addEventListener('click', ouvrirMenu);
 overlaySidebar.addEventListener('click', fermerMenu);
 
 </script>
-<script src="../assets/js/sonnerie_admin.js"></script>
+
 </body>
 </html>
