@@ -23,7 +23,7 @@ SELECT *
 
 FROM commande
 
-WHERE id_client = ?
+WHERE id_client = ? AND masquee_client = 0
 
 ORDER BY date_commande DESC
 
@@ -794,6 +794,12 @@ $nombre_commandes_client = $requete->rowCount();
             </a>
 
 
+            <a href="ma_fidelite.php">
+                <i class="bi bi-gift"></i>
+                Ma fidélité
+            </a>
+
+
             <?php if ($nombre_commandes_client > 0): ?>
 
                 <a href="mes_commandes.php">
@@ -892,6 +898,10 @@ $nombre_commandes_client = $requete->rowCount();
             <i class="bi bi-star"></i> Avis
         </a>
 
+        <a href="ma_fidelite.php" class="lien-sidebar">
+            <i class="bi bi-gift"></i> Ma fidélité
+        </a>
+
         <?php if ($nombre_commandes_client > 0): ?>
 
             <a href="mes_commandes.php" class="lien-sidebar">
@@ -948,6 +958,18 @@ $nombre_commandes_client = $requete->rowCount();
 
 </div>
 
+<?php if(isset($_GET["supprime"])): ?>
+<div class="alert alert-success mx-4 mt-3">
+    <i class="bi bi-check-circle"></i> La commande a été retirée de votre historique.
+</div>
+<?php endif; ?>
+
+<?php if(isset($_GET["erreur"])): ?>
+<div class="alert alert-danger mx-4 mt-3">
+    <i class="bi bi-exclamation-triangle"></i> <?php echo htmlspecialchars($_GET["erreur"]); ?>
+</div>
+<?php endif; ?>
+
 <div class="p-4">
 
 <?php
@@ -994,6 +1016,12 @@ Passée le <?php echo date("d/m/Y à H:i", strtotime($commande["date_commande"])
 <a href="voir_commande_client.php?id_commande=<?php echo $commande["id_commande"]; ?>" class="btn btn-outline-bordeaux btn-sm">
 Voir le détail
 </a>
+
+<?php if(in_array($commande["statut"], ["Livrée", "Annulée"], true)): ?>
+<a href="supprimer_commande_client.php?id_commande=<?php echo $commande["id_commande"]; ?>" class="btn btn-outline-danger btn-sm ms-1" onclick="return confirm('Retirer cette commande de votre historique ? Cette action est définitive de votre côté.');">
+<i class="bi bi-trash"></i>
+</a>
+<?php endif; ?>
 
 </div>
 
@@ -1122,6 +1150,7 @@ Voir le détail
 
                 <ul class="list-unstyled">
                     <li class="mb-2"><a href="mes_commandes.php">Mes commandes</a></li>
+                    <li class="mb-2"><a href="ma_fidelite.php">Ma fidélité</a></li>
                     <li class="mb-2"><a href="mes_notifications.php">Notifications</a></li>
                     <li class="mb-2"><a href="modifier_client.php">Mon profil</a></li>
                     <li class="mb-2"><a href="../panier/panier.php">Mon panier</a></li>
