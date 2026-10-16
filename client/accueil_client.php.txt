@@ -56,12 +56,16 @@ $requete = $connexion->prepare("
 
     SELECT
         vin.*,
-        categorie.libelle AS libelle_categorie
+        categorie.libelle AS libelle_categorie,
+        cepage.nom_cepage AS nom_cepage
 
     FROM vin
 
     LEFT JOIN categorie
         ON vin.id_categorie = categorie.id_categorie
+
+    LEFT JOIN cepage
+        ON vin.id_cepage = cepage.id_cepage
 
     WHERE $sql_conditions
 
@@ -2958,6 +2962,17 @@ if (isset($_SESSION["client_id"])) {
                                 <?php
                                 echo htmlspecialchars(
                                     $vin["millesime"]
+                                );
+                                ?>
+
+                            <?php endif; ?>
+
+                            <?php if (!empty($vin["nom_cepage"])): ?>
+
+                                •
+                                <?php
+                                echo htmlspecialchars(
+                                    $vin["nom_cepage"]
                                 );
                                 ?>
 
