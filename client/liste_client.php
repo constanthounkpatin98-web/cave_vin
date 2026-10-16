@@ -456,7 +456,7 @@ body{
                     </span>
                 </div>
                 <?php endforeach; ?>
-                <a href="../commande/mes_commandes.php" class="d-inline-block mt-3 small" style="color:var(--bordeaux); font-weight:600; text-decoration:none;">
+                <a href="../client/mes_commandes.php" class="d-inline-block mt-3 small" style="color:var(--bordeaux); font-weight:600; text-decoration:none;">
                     Voir toutes mes commandes <i class="bi bi-arrow-right"></i>
                 </a>
             <?php endif; ?>
