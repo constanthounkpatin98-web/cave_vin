@@ -21,7 +21,7 @@ $requete = $connexion->prepare("
 
 SELECT * FROM notification
 
-WHERE id_client = ?
+WHERE id_client = ? AND masquee_client = 0
 
 ORDER BY date_envoi DESC
 
@@ -763,6 +763,12 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
             </a>
 
 
+            <a href="ma_fidelite.php">
+                <i class="bi bi-gift"></i>
+                Ma fidélité
+            </a>
+
+
             <?php if ($nombre_commandes_client > 0): ?>
 
                 <a href="mes_commandes.php">
@@ -861,6 +867,10 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
             <i class="bi bi-star"></i> Avis
         </a>
 
+        <a href="ma_fidelite.php" class="lien-sidebar">
+            <i class="bi bi-gift"></i> Ma fidélité
+        </a>
+
         <?php if ($nombre_commandes_client > 0): ?>
 
             <a href="mes_commandes.php" class="lien-sidebar">
@@ -924,6 +934,12 @@ $nombre_commandes_client = $requete_commandes->fetch()["total"];
 
 <div class="p-4">
 
+<?php if(isset($_GET["supprime"])): ?>
+<div class="alert alert-success mb-3">
+    <i class="bi bi-check-circle"></i> La notification a été retirée de votre liste.
+</div>
+<?php endif; ?>
+
 <?php
 
 $aucune_notification = true;
@@ -957,6 +973,10 @@ while($ligne = $requete->fetch())
 <p class="mb-0"><?php echo htmlspecialchars($ligne["message"]); ?></p>
 
 </div>
+
+<a href="supprimer_notification_client.php?id_notification=<?php echo $ligne["id_notification"]; ?>" class="btn btn-outline-danger btn-sm align-self-start" onclick="return confirm('Retirer cette notification de votre liste ?');">
+<i class="bi bi-trash"></i>
+</a>
 
 </div>
 
@@ -1079,6 +1099,7 @@ while($ligne = $requete->fetch())
 
                 <ul class="list-unstyled">
                     <li class="mb-2"><a href="mes_commandes.php">Mes commandes</a></li>
+                    <li class="mb-2"><a href="ma_fidelite.php">Ma fidélité</a></li>
                     <li class="mb-2"><a href="mes_notifications.php">Notifications</a></li>
                     <li class="mb-2"><a href="modifier_client.php">Mon profil</a></li>
                     <li class="mb-2"><a href="../panier/panier.php">Mon panier</a></li>
