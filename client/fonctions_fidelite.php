@@ -146,6 +146,76 @@ function attribuer_points_fidelite($connexion, $id_client, $id_commande, $montan
 
 
 //===============================================
+// Historique des opérations de fidélité d'un client
+// (gains et utilisations), du plus récent au plus ancien
+//===============================================
+
+function obtenir_historique_fidelite($connexion, $id_client, $limite = 30)
+{
+    $limite = (int) $limite;
+
+    $requete = $connexion->prepare("
+        SELECT *
+        FROM historique_fidelite
+        WHERE id_client = ? AND masquee_client = 0
+        ORDER BY id_historique DESC
+        LIMIT " . $limite . "
+    ");
+    $requete->execute([$id_client]);
+
+    return $requete->fetchAll();
+}
+
+
+//===============================================
+// Masque une ligne de l'historique de fidélité pour ce client
+// uniquement (jamais de suppression réelle : cette trace reste
+// nécessaire au calcul du solde et à la preuve en cas de litige).
+//===============================================
+
+function masquer_historique_fidelite($connexion, $id_client, $id_historique)
+{
+    $verif = $connexion->prepare("
+        SELECT id_historique FROM historique_fidelite
+        WHERE id_historique = ? AND id_client = ?
+    ");
+    $verif->execute([$id_historique, $id_client]);
+
+    if (!$verif->fetch()) {
+        return false;
+    }
+
+    $connexion->prepare("
+        UPDATE historique_fidelite SET masquee_client = 1
+        WHERE id_historique = ? AND id_client = ?
+    ")->execute([$id_historique, $id_client]);
+
+    return true;
+}
+
+
+//===============================================
+// Totaux all-time des points gagnés et utilisés par un client
+// (le solde actuel seul ne suffit pas puisqu'il diminue quand
+// le client utilise une récompense)
+//===============================================
+
+function obtenir_totaux_points_fidelite($connexion, $id_client)
+{
+    $requete = $connexion->prepare("
+        SELECT
+            COALESCE(SUM(CASE WHEN type_operation = 'Gagné'  THEN points ELSE 0 END), 0) AS total_gagne,
+            COALESCE(SUM(CASE WHEN type_operation = 'Utilisé' THEN points ELSE 0 END), 0) AS total_utilise
+        FROM historique_fidelite
+        WHERE id_client = ?
+    ");
+    $requete->execute([$id_client]);
+
+    return $requete->fetch();
+}
+
+
+//===============================================
 // Retourne les infos fidélité d'un client (crée le compte si besoin)
 //===============================================
 
