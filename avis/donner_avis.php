@@ -751,6 +751,12 @@ $nombre_commandes_client = $requete_commandes_total->fetch()["total"];
             </a>
 
 
+            <a href="../client/ma_fidelite.php">
+                <i class="bi bi-gift"></i>
+                Ma fidélité
+            </a>
+
+
             <?php if ($nombre_commandes_client > 0): ?>
 
                 <a href="../client/mes_commandes.php">
@@ -847,6 +853,10 @@ $nombre_commandes_client = $requete_commandes_total->fetch()["total"];
 
         <a href="donner_avis.php" class="lien-sidebar">
             <i class="bi bi-star-fill"></i> Avis
+        </a>
+
+        <a href="../client/ma_fidelite.php" class="lien-sidebar">
+            <i class="bi bi-gift"></i> Ma fidélité
         </a>
 
         <?php if ($nombre_commandes_client > 0): ?>
@@ -1014,6 +1024,7 @@ Envoyer mon avis
 
                 <ul class="list-unstyled">
                     <li class="mb-2"><a href="../client/mes_commandes.php">Mes commandes</a></li>
+                    <li class="mb-2"><a href="../client/ma_fidelite.php">Ma fidélité</a></li>
                     <li class="mb-2"><a href="../client/mes_notifications.php">Notifications</a></li>
                     <li class="mb-2"><a href="../client/modifier_client.php">Mon profil</a></li>
                     <li class="mb-2"><a href="../panier/panier.php">Mon panier</a></li>
