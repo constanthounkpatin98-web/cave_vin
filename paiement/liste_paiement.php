@@ -854,6 +854,6 @@ btnMenuMobile.addEventListener('click', ouvrirMenu);
 overlaySidebar.addEventListener('click', fermerMenu);
 
 </script>
-<script src="../assets/js/sonnerie_admin.js"></script>
+
 </body>
 </html>
