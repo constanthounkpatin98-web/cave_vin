@@ -1,5 +1,7 @@
 <?php
 
+date_default_timezone_set('Africa/Porto-Novo');
+
 session_start();
 
 require_once("../connexion.php");
@@ -89,6 +91,50 @@ switch($periode)
         break;
 }
 
+// Borne de fin par défaut : maintenant (les périodes ci-dessus vont toutes jusqu'à aujourd'hui)
+$date_fin_periode = date('Y-m-d H:i:s');
+
+
+//===============================================
+// Calendrier unique : l'administrateur choisit UNE date dans un
+// calendrier, puis précise s'il veut voir ce jour, ce mois ou
+// cette année entière autour de cette date.
+//===============================================
+
+$date_recherche = null;
+$granularite    = null;
+
+if(isset($_GET['date_recherche']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_recherche']))
+{
+    $date_recherche = $_GET['date_recherche'];
+    $granularite    = in_array($_GET['granularite'] ?? '', ['jour', 'mois', 'annee']) ? $_GET['granularite'] : 'mois';
+
+    switch($granularite)
+    {
+        case 'jour':
+            $date_debut_periode = $date_recherche . ' 00:00:00';
+            $date_fin_periode   = $date_recherche . ' 23:59:59';
+            $grouper_par_mois   = false;
+            break;
+
+        case 'annee':
+            $annee_choisie      = date('Y', strtotime($date_recherche));
+            $date_debut_periode = $annee_choisie . '-01-01 00:00:00';
+            $date_fin_periode   = $annee_choisie . '-12-31 23:59:59';
+            $grouper_par_mois   = true;
+            break;
+
+        case 'mois':
+        default:
+            $date_debut_periode = date('Y-m-01 00:00:00', strtotime($date_recherche));
+            $date_fin_periode   = date('Y-m-t 23:59:59', strtotime($date_recherche));
+            $grouper_par_mois   = false;
+            break;
+    }
+
+    $periode = 'calendrier';
+}
+
 
 //===============================================
 // Export CSV (si demandé) — s'exécute avant tout affichage HTML
@@ -106,11 +152,12 @@ if(isset($_GET['export']) && in_array($_GET['export'], ['top_vins', 'top_clients
                 FROM ligne_commande
                 INNER JOIN vin ON ligne_commande.id_vin = vin.id_vin
                 INNER JOIN commande ON ligne_commande.id_commande = commande.id_commande
-                WHERE commande.date_commande >= ?
+                INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+                WHERE commande.date_commande BETWEEN ? AND ?
                 GROUP BY vin.id_vin
                 ORDER BY chiffre_affaires DESC
             ");
-            $req->execute([$date_debut_periode]);
+            $req->execute([$date_debut_periode, $date_fin_periode]);
             $lignes = $req->fetchAll();
             $nom_fichier = 'top_vins_' . date('Ymd_His') . '.csv';
             $entetes = ['Vin', 'Couleur', 'Quantité vendue', 'Chiffre d\'affaires (F)'];
@@ -122,11 +169,12 @@ if(isset($_GET['export']) && in_array($_GET['export'], ['top_vins', 'top_clients
                        SUM(commande.montant_total) AS total_depense
                 FROM commande
                 INNER JOIN client ON commande.id_client = client.id_client
-                WHERE commande.date_commande >= ?
+                INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+                WHERE commande.date_commande BETWEEN ? AND ?
                 GROUP BY client.id_client
                 ORDER BY total_depense DESC
             ");
-            $req->execute([$date_debut_periode]);
+            $req->execute([$date_debut_periode, $date_fin_periode]);
             $lignes = $req->fetchAll();
             $nom_fichier = 'top_clients_' . date('Ymd_His') . '.csv';
             $entetes = ['Nom', 'Prénom', 'Email', 'Nombre de commandes', 'Total dépensé (F)'];
@@ -160,9 +208,10 @@ if(isset($_GET['export']) && in_array($_GET['export'], ['top_vins', 'top_clients
 
 $erreur_chargement = null;
 
-$ca_periode          = 0;
-$commandes_periode   = 0;
-$panier_moyen        = 0;
+$ca_periode              = 0;
+$commandes_periode       = 0;
+$commandes_payees_periode = 0;
+$panier_moyen            = 0;
 $nouveaux_clients    = 0;
 
 $labels_evolution    = [];
@@ -179,6 +228,7 @@ $valeurs_categorie = [];
 $top_vins    = [];
 $top_clients = [];
 $mouvements_stock = [];
+$detail_commandes_periode = [];
 
 
 //===============================================
@@ -189,16 +239,29 @@ try
 {
 
     //---------- KPIs ----------
+    // Nombre total de commandes (tous statuts confondus)
 
-    $req = $connexion->prepare("SELECT COALESCE(SUM(montant_total),0) AS total, COUNT(*) AS nb FROM commande WHERE date_commande >= ?");
-    $req->execute([$date_debut_periode]);
+    $req = $connexion->prepare("SELECT COUNT(*) AS nb FROM commande WHERE date_commande BETWEEN ? AND ?");
+    $req->execute([$date_debut_periode, $date_fin_periode]);
+    $commandes_periode = (int)$req->fetch()['nb'];
+
+    // Chiffre d'affaires : uniquement les commandes dont le paiement est réellement "Validé"
+    // (un paiement remboursé sort automatiquement de ce total puisqu'il passe à 'Remboursé')
+
+    $req = $connexion->prepare("
+        SELECT COALESCE(SUM(paiement.montant),0) AS total, COUNT(*) AS nb
+        FROM commande
+        INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+        WHERE commande.date_commande BETWEEN ? AND ?
+    ");
+    $req->execute([$date_debut_periode, $date_fin_periode]);
     $r = $req->fetch();
-    $ca_periode        = (float)$r['total'];
-    $commandes_periode = (int)$r['nb'];
-    $panier_moyen       = $commandes_periode > 0 ? $ca_periode / $commandes_periode : 0;
+    $ca_periode              = (float)$r['total'];
+    $commandes_payees_periode = (int)$r['nb'];
+    $panier_moyen            = $commandes_payees_periode > 0 ? $ca_periode / $commandes_payees_periode : 0;
 
-    $req = $connexion->prepare("SELECT COUNT(*) AS total FROM client WHERE date_inscription >= ?");
-    $req->execute([$date_debut_periode]);
+    $req = $connexion->prepare("SELECT COUNT(*) AS total FROM client WHERE date_inscription BETWEEN ? AND ?");
+    $req->execute([$date_debut_periode, $date_fin_periode]);
     $nouveaux_clients = (int)$req->fetch()['total'];
 
 
@@ -206,48 +269,90 @@ try
 
     if($grouper_par_mois)
     {
+        // Nombre de commandes par mois (tous statuts)
         $req = $connexion->prepare("
-            SELECT DATE_FORMAT(date_commande, '%Y-%m') AS periode, COUNT(*) AS nb, COALESCE(SUM(montant_total),0) AS montant
+            SELECT DATE_FORMAT(date_commande, '%Y-%m') AS periode, COUNT(*) AS nb
             FROM commande
-            WHERE date_commande >= ?
+            WHERE date_commande BETWEEN ? AND ?
             GROUP BY periode
             ORDER BY periode ASC
         ");
-        $req->execute([$date_debut_periode]);
+        $req->execute([$date_debut_periode, $date_fin_periode]);
 
+        $nb_par_periode = [];
         while($ligne = $req->fetch())
         {
-            $labels_evolution[]    = date('m/Y', strtotime($ligne['periode'] . '-01'));
-            $commandes_evolution[] = (int)$ligne['nb'];
-            $montants_evolution[]  = (float)$ligne['montant'];
+            $nb_par_periode[$ligne['periode']] = (int)$ligne['nb'];
+        }
+
+        // Montant encaissé par mois (paiements validés uniquement)
+        $req = $connexion->prepare("
+            SELECT DATE_FORMAT(commande.date_commande, '%Y-%m') AS periode, COALESCE(SUM(paiement.montant),0) AS montant
+            FROM commande
+            INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+            WHERE commande.date_commande BETWEEN ? AND ?
+            GROUP BY periode
+            ORDER BY periode ASC
+        ");
+        $req->execute([$date_debut_periode, $date_fin_periode]);
+
+        $montant_par_periode = [];
+        while($ligne = $req->fetch())
+        {
+            $montant_par_periode[$ligne['periode']] = (float)$ligne['montant'];
+        }
+
+        foreach($nb_par_periode as $periode => $nb)
+        {
+            $labels_evolution[]    = date('m/Y', strtotime($periode . '-01'));
+            $commandes_evolution[] = $nb;
+            $montants_evolution[]  = $montant_par_periode[$periode] ?? 0;
         }
     }
     else
     {
+        // Nombre de commandes par jour (tous statuts)
         $req = $connexion->prepare("
-            SELECT DATE(date_commande) AS jour, COUNT(*) AS nb, COALESCE(SUM(montant_total),0) AS montant
+            SELECT DATE(date_commande) AS jour, COUNT(*) AS nb
             FROM commande
-            WHERE date_commande >= ?
+            WHERE date_commande BETWEEN ? AND ?
             GROUP BY jour
             ORDER BY jour ASC
         ");
-        $req->execute([$date_debut_periode]);
+        $req->execute([$date_debut_periode, $date_fin_periode]);
 
-        $par_jour = [];
+        $nb_par_jour = [];
         while($ligne = $req->fetch())
         {
-            $par_jour[$ligne['jour']] = $ligne;
+            $nb_par_jour[$ligne['jour']] = (int)$ligne['nb'];
         }
 
-        $nb_jours = (int)ceil((time() - strtotime($date_debut_periode)) / 86400);
+        // Montant encaissé par jour (paiements validés uniquement)
+        $req = $connexion->prepare("
+            SELECT DATE(commande.date_commande) AS jour, COALESCE(SUM(paiement.montant),0) AS montant
+            FROM commande
+            INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+            WHERE commande.date_commande BETWEEN ? AND ?
+            GROUP BY jour
+            ORDER BY jour ASC
+        ");
+        $req->execute([$date_debut_periode, $date_fin_periode]);
+
+        $montant_par_jour = [];
+        while($ligne = $req->fetch())
+        {
+            $montant_par_jour[$ligne['jour']] = (float)$ligne['montant'];
+        }
+
+        $nb_jours = (int)ceil((strtotime($date_fin_periode) - strtotime($date_debut_periode)) / 86400) + 1;
         $nb_jours = max(1, min($nb_jours, 90));
 
-        for($i = $nb_jours - 1; $i >= 0; $i--)
+        for($i = 0; $i < $nb_jours; $i++)
         {
-            $jour = date('Y-m-d', strtotime("-$i day"));
+            $jour = date('Y-m-d', strtotime($date_debut_periode . " +$i day"));
             $labels_evolution[]    = date('d/m', strtotime($jour));
-            $commandes_evolution[] = isset($par_jour[$jour]) ? (int)$par_jour[$jour]['nb'] : 0;
-            $montants_evolution[]  = isset($par_jour[$jour]) ? (float)$par_jour[$jour]['montant'] : 0;
+            $commandes_evolution[] = $nb_par_jour[$jour] ?? 0;
+            $montants_evolution[]  = $montant_par_jour[$jour] ?? 0;
         }
     }
 
@@ -262,8 +367,8 @@ try
         'Annulée'    => '#ef4444',
     ];
 
-    $req = $connexion->prepare("SELECT statut, COUNT(*) AS total FROM commande WHERE date_commande >= ? GROUP BY statut");
-    $req->execute([$date_debut_periode]);
+    $req = $connexion->prepare("SELECT statut, COUNT(*) AS total FROM commande WHERE date_commande BETWEEN ? AND ? GROUP BY statut");
+    $req->execute([$date_debut_periode, $date_fin_periode]);
 
     while($ligne = $req->fetch())
     {
@@ -280,12 +385,13 @@ try
         FROM ligne_commande
         INNER JOIN vin ON ligne_commande.id_vin = vin.id_vin
         INNER JOIN commande ON ligne_commande.id_commande = commande.id_commande
+        INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
         LEFT JOIN categorie ON vin.id_categorie = categorie.id_categorie
-        WHERE commande.date_commande >= ?
+        WHERE commande.date_commande BETWEEN ? AND ?
         GROUP BY categorie.id_categorie
         ORDER BY total DESC
     ");
-    $req->execute([$date_debut_periode]);
+    $req->execute([$date_debut_periode, $date_fin_periode]);
 
     while($ligne = $req->fetch())
     {
@@ -302,12 +408,13 @@ try
         FROM ligne_commande
         INNER JOIN vin ON ligne_commande.id_vin = vin.id_vin
         INNER JOIN commande ON ligne_commande.id_commande = commande.id_commande
-        WHERE commande.date_commande >= ?
+        INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+        WHERE commande.date_commande BETWEEN ? AND ?
         GROUP BY vin.id_vin
         ORDER BY chiffre_affaires DESC
         LIMIT 10
     ");
-    $req->execute([$date_debut_periode]);
+    $req->execute([$date_debut_periode, $date_fin_periode]);
     $top_vins = $req->fetchAll();
 
 
@@ -319,13 +426,38 @@ try
                SUM(commande.montant_total) AS total_depense
         FROM commande
         INNER JOIN client ON commande.id_client = client.id_client
-        WHERE commande.date_commande >= ?
+        INNER JOIN paiement ON paiement.id_commande = commande.id_commande AND paiement.statut = 'Validé'
+        WHERE commande.date_commande BETWEEN ? AND ?
         GROUP BY client.id_client
         ORDER BY total_depense DESC
         LIMIT 5
     ");
-    $req->execute([$date_debut_periode]);
+    $req->execute([$date_debut_periode, $date_fin_periode]);
     $top_clients = $req->fetchAll();
+
+
+    //---------- Détail des commandes + paiements sur la période (vue calendrier) ----------
+
+    $req = $connexion->prepare("
+        SELECT
+            commande.id_commande,
+            commande.date_commande,
+            commande.montant_total,
+            commande.statut AS statut_commande,
+            client.nom,
+            client.prenom,
+            paiement.statut AS statut_paiement,
+            paiement.mode_paiement,
+            paiement.montant AS montant_paiement
+        FROM commande
+        INNER JOIN client ON commande.id_client = client.id_client
+        LEFT JOIN paiement ON paiement.id_commande = commande.id_commande
+        WHERE commande.date_commande BETWEEN ? AND ?
+        ORDER BY commande.date_commande DESC
+        LIMIT 200
+    ");
+    $req->execute([$date_debut_periode, $date_fin_periode]);
+    $detail_commandes_periode = $req->fetchAll();
 
 
     //---------- Derniers mouvements de stock ----------
@@ -335,11 +467,11 @@ try
                stock_mouvement.stock_apres, vin.nom_vin
         FROM stock_mouvement
         INNER JOIN vin ON stock_mouvement.id_vin = vin.id_vin
-        WHERE stock_mouvement.date_mouvement >= ?
+        WHERE stock_mouvement.date_mouvement BETWEEN ? AND ?
         ORDER BY stock_mouvement.date_mouvement DESC
         LIMIT 10
     ");
-    $req->execute([$date_debut_periode]);
+    $req->execute([$date_debut_periode, $date_fin_periode]);
     $mouvements_stock = $req->fetchAll();
 
 }
@@ -555,6 +687,25 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
 .item-menu-notif:last-child{ border-bottom:none; }
 .item-menu-notif:hover{ background:var(--fond); }
 .item-menu-notif.item-non-lue{ background:var(--bleu-clair); }
+
+.menu-compte-admin{
+    min-width:200px;
+    border-radius:12px;
+    border:1px solid var(--bordure);
+    box-shadow:0 12px 28px rgba(16,24,40,.12);
+    padding:.4rem;
+    margin-top:.5rem;
+}
+
+.menu-compte-admin .dropdown-item{
+    border-radius:8px;
+    padding:.55rem .7rem;
+    font-size:.86rem;
+    font-weight:500;
+}
+
+.menu-compte-admin .dropdown-item:hover{ background:var(--fond); }
+.menu-compte-admin .dropdown-item.text-danger:hover{ background:#fef2f2; }
 
 .icone-notif-item{ color:var(--bleu); margin-top:.15rem; flex-shrink:0; }
 .titre-notif-item{ font-size:.83rem; font-weight:700; }
@@ -792,13 +943,28 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
                     <?php endif; ?>
                 </div>
             </div>
-            <div class="d-flex align-items-center gap-2">
-                <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
-                <div class="d-none d-md-block">
-                    <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
-                    <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
-                </div>
-                <i class="bi bi-chevron-down text-muted small"></i>
+            <div class="dropdown">
+                <button type="button" class="btn btn-light border-0 p-0 d-flex align-items-center gap-2 dropdown-toggle-sans-fleche" data-bs-toggle="dropdown" aria-expanded="false">
+                    <div class="avatar-rond"><?php echo strtoupper(substr($nom_admin, 0, 1)); ?></div>
+                    <div class="d-none d-md-block text-start">
+                        <div style="font-size:.82rem; font-weight:600;"><?php echo htmlspecialchars($nom_admin); ?></div>
+                        <div style="font-size:.72rem; color:var(--texte-att);">Administrateur</div>
+                    </div>
+                    <i class="bi bi-chevron-down text-muted small"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end menu-compte-admin">
+                    <li>
+                        <a class="dropdown-item" href="parametres.php">
+                            <i class="bi bi-person-circle me-2"></i> Mon profil
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-danger" href="../administrateur/deconnexion_admin.php" onclick="return confirm('Voulez-vous vraiment vous déconnecter ?');">
+                            <i class="bi bi-box-arrow-right me-2"></i> Déconnexion
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </div>
@@ -831,12 +997,47 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
             <?php endforeach; ?>
         </div>
 
+        <!-- ===== Calendrier unique : choisir une date puis jour / mois / année ===== -->
+        <div class="carte mb-3">
+            <div class="corps-carte py-3">
+                <form method="GET" class="row g-3 align-items-end">
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small text-muted mb-1"><i class="bi bi-calendar3"></i> Choisir une date</label>
+                        <input type="date" name="date_recherche" class="form-control" value="<?php echo htmlspecialchars($date_recherche ?? date('Y-m-d')); ?>">
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                        <label class="form-label small text-muted mb-1">Voir</label>
+                        <select name="granularite" class="form-select">
+                            <option value="jour"  <?php echo $granularite === 'jour'  ? 'selected' : ''; ?>>Ce jour précisément</option>
+                            <option value="mois"  <?php echo ($granularite === 'mois' || $granularite === null) ? 'selected' : ''; ?>>Tout le mois</option>
+                            <option value="annee" <?php echo $granularite === 'annee' ? 'selected' : ''; ?>>Toute l'année</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-md-4 d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-grow-1"><i class="bi bi-search"></i> Rechercher</button>
+                        <?php if($date_recherche): ?>
+                        <a href="?periode=30" class="btn btn-outline-secondary"><i class="bi bi-x-lg"></i></a>
+                        <?php endif; ?>
+                    </div>
+
+                </form>
+                <?php if($date_recherche): ?>
+                <div class="small text-muted mt-2">
+                    Période affichée : <strong><?php echo date_francaise(strtotime($date_debut_periode)); ?></strong> au <strong><?php echo date_francaise(strtotime($date_fin_periode)); ?></strong>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <!-- ===== KPIs ===== -->
         <div class="row g-3 mb-3">
 
             <div class="col-6 col-xl-3">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--vert);"><i class="bi bi-cash-coin"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-cash-coin"></i></div>
                     <div>
                         <div class="libelle-stat">Chiffre d'affaires</div>
                         <div class="valeur-stat"><?php echo number_format($ca_periode, 0, ',', ' '); ?> F</div>
@@ -856,7 +1057,7 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
 
             <div class="col-6 col-xl-3">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--violet);"><i class="bi bi-basket3"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-basket3"></i></div>
                     <div>
                         <div class="libelle-stat">Panier moyen</div>
                         <div class="valeur-stat"><?php echo number_format($panier_moyen, 0, ',', ' '); ?> F</div>
@@ -866,7 +1067,7 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
 
             <div class="col-6 col-xl-3">
                 <div class="carte carte-stat h-100">
-                    <div class="icone-stat" style="background:var(--jaune);"><i class="bi bi-person-plus"></i></div>
+                    <div class="icone-stat" style="background:var(--bleu);"><i class="bi bi-person-plus"></i></div>
                     <div>
                         <div class="libelle-stat">Nouveaux clients</div>
                         <div class="valeur-stat"><?php echo number_format($nouveaux_clients, 0, ',', ' '); ?></div>
@@ -992,6 +1193,61 @@ button.cloche-notif{ background:transparent; border:0; line-height:1; }
                 </div>
             </div>
 
+        </div>
+
+        <!-- ===== Détail des commandes + paiements de la période (vue calendrier) ===== -->
+        <div class="row g-3 mb-3">
+            <div class="col-12">
+                <div class="carte h-100">
+                    <div class="entete-carte">
+                        <h6>Détail des commandes de la période</h6>
+                        <span class="text-muted small"><?php echo count($detail_commandes_periode); ?> commande<?php echo count($detail_commandes_periode) > 1 ? 's' : ''; ?> (200 max affichées)</span>
+                    </div>
+                    <div class="corps-carte">
+                        <div class="table-responsive">
+                        <table class="table-vins">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Client</th>
+                                    <th>Montant commande</th>
+                                    <th>Statut commande</th>
+                                    <th>Paiement</th>
+                                    <th>Statut paiement</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if(empty($detail_commandes_periode)): ?>
+                                <tr><td colspan="6" class="text-muted text-center py-3">Aucune commande sur cette période.</td></tr>
+                                <?php endif; ?>
+                                <?php foreach($detail_commandes_periode as $d): ?>
+                                <tr>
+                                    <td class="text-muted"><?php echo date('d/m/Y H:i', strtotime($d['date_commande'])); ?></td>
+                                    <td class="fw-semibold"><?php echo htmlspecialchars($d['prenom'] . ' ' . $d['nom']); ?></td>
+                                    <td><?php echo number_format($d['montant_total'], 0, ',', ' '); ?> F</td>
+                                    <td>
+                                        <span class="badge rounded-pill" style="background:<?php echo $couleurs_statuts[$d['statut_commande']] ?? '#adb5bd'; ?>;">
+                                            <?php echo htmlspecialchars($d['statut_commande']); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo htmlspecialchars($d['mode_paiement'] ?? '—'); ?></td>
+                                    <td>
+                                        <?php if($d['statut_paiement']): ?>
+                                        <span class="badge rounded-pill <?php echo $d['statut_paiement'] === 'Validé' ? 'text-bg-success' : 'text-bg-warning'; ?>">
+                                            <?php echo htmlspecialchars($d['statut_paiement']); ?>
+                                        </span>
+                                        <?php else: ?>
+                                        <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- ===== Mouvements de stock ===== -->
