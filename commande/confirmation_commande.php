@@ -846,6 +846,7 @@ $is_virement = strpos($mode_paiement, 'virement') !== false || strpos($mode_paie
         }
 
         .entete a[href*="donner_avis"],
+        .entete a[href*="ma_fidelite"],
         .entete a[href*="mes_commandes"],
         .entete a[href*="deconnexion"],
         .entete a[href*="connexion_client"] {
@@ -855,6 +856,7 @@ $is_virement = strpos($mode_paiement, 'virement') !== false || strpos($mode_paie
         }
 
         .entete a[href*="donner_avis"] i,
+        .entete a[href*="ma_fidelite"] i,
         .entete a[href*="mes_commandes"] i,
         .entete a[href*="deconnexion"] i,
         .entete a[href*="connexion_client"] i {
@@ -1012,6 +1014,11 @@ $is_virement = strpos($mode_paiement, 'virement') !== false || strpos($mode_paie
                 <a href="../avis/donner_avis.php">
                     <i class="bi bi-star"></i>
                     Avis
+                </a>
+
+                <a href="../client/ma_fidelite.php">
+                    <i class="bi bi-gift"></i>
+                    Ma fidélité
                 </a>
 
                 <?php if ($nombre_commandes_client > 0): ?>
@@ -1278,6 +1285,7 @@ $is_virement = strpos($mode_paiement, 'virement') !== false || strpos($mode_paie
                 <ul class="list-unstyled">
                     <?php if (isset($_SESSION["client_id"])): ?>
                         <li class="mb-2"><a href="../client/mes_commandes.php">Mes commandes</a></li>
+                        <li class="mb-2"><a href="../client/ma_fidelite.php">Ma fidélité</a></li>
                         <li class="mb-2"><a href="../client/mes_notifications.php">Notifications</a></li>
                         <li class="mb-2"><a href="../client/modifier_client.php">Mon profil</a></li>
                     <?php else: ?>
